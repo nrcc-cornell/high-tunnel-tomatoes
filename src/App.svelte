@@ -1,8 +1,10 @@
-<script>
+<script lang="ts">
+	import Map from "./components/map/Map.svelte";
 </script>
 
 <main>
 	<h1>High Tunnel Tomatoes</h1>
+	<Map />
 </main>
 
 <style>
