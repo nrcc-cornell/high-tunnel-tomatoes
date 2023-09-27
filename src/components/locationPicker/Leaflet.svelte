@@ -1,15 +1,16 @@
 <script lang="ts">
 	import { onMount, onDestroy, setContext, createEventDispatcher } from 'svelte';
 	import type { LocationObj } from '../../global';
-	import { tileLayer, map} from 'leaflet';
+	import { tileLayer, map, geoJson} from 'leaflet';
 	import { OpenStreetMapProvider, GeoSearchControl } from 'leaflet-geosearch';
 	import 'leaflet/dist/leaflet.css';
 	import 'leaflet-geosearch/dist/geosearch.css';
+	import statesData from './northeast-states';
 
 	export let bounds: L.LatLngBoundsExpression | undefined = undefined;
 	export let view: L.LatLngExpression | undefined = undefined;
 	export let zoom: number | undefined = undefined;
-	export let locations: LocationObj[] | undefined = undefined;
+	export let locations: LocationObj[] | null = null;
 	export let handleMapClick = (e) => null;
 
 	const dispatch = createEventDispatcher();
@@ -30,22 +31,19 @@
 			attribution: `&copy;<a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>,&copy;<a href="https://carto.com/attributions" target="_blank">CARTO</a>`
 		}).addTo(leafMap);
 
+		geoJson(statesData, {
+			style: {
+				color: '#8c877b',
+				weight: 1.5,
+				fillOpacity: 0
+			}
+		}).addTo(leafMap);
+
 		const provider = new OpenStreetMapProvider();
 		leafMap.addControl(GeoSearchControl({ provider, style: 'bar' }));
 
 		leafMap.on('click', handleMapClick);
-	});
 
-	onDestroy(() => {
-		leafMap?.remove();
-		leafMap = undefined;
-	});
-
-	setContext('map', {
-		getMap: () => leafMap
-	});
-
-	$: if (leafMap) {
 		if (bounds) {
 			leafMap.fitBounds(bounds);
 		} else if (view && zoom) {
@@ -63,16 +61,22 @@
 				[boundsObj.ll.lat, boundsObj.ll.lon],
 				[boundsObj.ur.lat, boundsObj.ur.lon]
 			], {
-				paddingTopLeft: [10,15],
-				paddingBottomRight: [10,5]
+				padding: [80,80],
 			});
 		}
-	}
+	});
 
-	console.log('end of script: leaflet');
+	onDestroy(() => {
+		leafMap?.remove();
+		leafMap = undefined;
+	});
+
+	setContext('map', {
+		getMap: () => leafMap
+	});
 </script>
 
-<div style="width: 80%; height: 100%; margin: 0 auto;" bind:this={mapElement}>
+<div style="width: 100%; height: 100%;" bind:this={mapElement}>
 	{#if leafMap}
 		<slot />
 	{/if}

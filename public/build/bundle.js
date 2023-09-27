@@ -109,6 +109,9 @@ var app = (function () {
         }
         return -1;
     }
+    function null_to_empty(value) {
+        return value == null ? '' : value;
+    }
     function set_store_value(store, ret, value) {
         store.set(value);
         return ret;
@@ -145,6 +148,17 @@ var app = (function () {
     function empty() {
         return text('');
     }
+    function listen(node, event, handler, options) {
+        node.addEventListener(event, handler, options);
+        return () => node.removeEventListener(event, handler, options);
+    }
+    function stop_propagation(fn) {
+        return function (event) {
+            event.stopPropagation();
+            // @ts-ignore
+            return fn.call(this, event);
+        };
+    }
     function attr(node, attribute, value) {
         if (value == null)
             node.removeAttribute(attribute);
@@ -161,6 +175,9 @@ var app = (function () {
         else {
             node.style.setProperty(key, value, important ? 'important' : '');
         }
+    }
+    function toggle_class(element, name, toggle) {
+        element.classList[toggle ? 'add' : 'remove'](name);
     }
     function custom_event(type, detail, { bubbles = false, cancelable = false } = {}) {
         const e = document.createEvent('CustomEvent');
@@ -249,6 +266,16 @@ var app = (function () {
      */
     function getContext(key) {
         return get_current_component().$$.context.get(key);
+    }
+    // TODO figure out if we still want to support
+    // shorthand events, or if we want to implement
+    // a real bubbling mechanism
+    function bubble(component, event) {
+        const callbacks = component.$$.callbacks[event.type];
+        if (callbacks) {
+            // @ts-ignore
+            callbacks.slice().forEach(fn => fn.call(this, event));
+        }
     }
 
     const dirty_components = [];
@@ -640,6 +667,21 @@ var app = (function () {
         dispatch_dev('SvelteDOMRemove', { node });
         detach(node);
     }
+    function listen_dev(node, event, handler, options, has_prevent_default, has_stop_propagation, has_stop_immediate_propagation) {
+        const modifiers = options === true ? ['capture'] : options ? Array.from(Object.keys(options)) : [];
+        if (has_prevent_default)
+            modifiers.push('preventDefault');
+        if (has_stop_propagation)
+            modifiers.push('stopPropagation');
+        if (has_stop_immediate_propagation)
+            modifiers.push('stopImmediatePropagation');
+        dispatch_dev('SvelteDOMAddEventListener', { node, event, handler, modifiers });
+        const dispose = listen(node, event, handler, options);
+        return () => {
+            dispatch_dev('SvelteDOMRemoveEventListener', { node, event, handler, modifiers });
+            dispose();
+        };
+    }
     function attr_dev(node, attribute, value) {
         attr(node, attribute, value);
         if (value == null)
@@ -738,16 +780,15 @@ var app = (function () {
         return { set, update, subscribe };
     }
 
-    const defaultLocation = {
-      lat: 42.44790335,
-      lon: -76.4757855322,
-      id: 'default',
-      shortAddress: '306 Tower Road',
-      fullAddress: '306 Tower Road, Ithaca, NY'
-    };
+    const activeLocation = writable(null);
+    const locations = writable(null);
+    const isLoadingLocation = writable(false);
 
-    const activeLocation = writable(defaultLocation);
-    const locations = writable([defaultLocation]);
+
+    // Spinner colors:
+    // #FF3E00 - red
+    // #40B3FF - blue
+    // #676778 - gray
 
     var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
 
@@ -15279,12 +15320,30 @@ var app = (function () {
 
     function e(){return e=Object.assign?Object.assign.bind():function(t){for(var e=1;e<arguments.length;e++){var r=arguments[e];for(var n in r)Object.prototype.hasOwnProperty.call(r,n)&&(t[n]=r[n]);}return t},e.apply(this,arguments)}function r(t,e){t.prototype=Object.create(e.prototype),t.prototype.constructor=t,n(t,e);}function n(t,e){return n=Object.setPrototypeOf?Object.setPrototypeOf.bind():function(t,e){return t.__proto__=e,t},n(t,e)}function o(){if("undefined"==typeof Reflect||!Reflect.construct)return !1;if(Reflect.construct.sham)return !1;if("function"==typeof Proxy)return !0;try{return Boolean.prototype.valueOf.call(Reflect.construct(Boolean,[],function(){})),!0}catch(t){return !1}}function i(t,e,r){return i=o()?Reflect.construct.bind():function(t,e,r){var o=[null];o.push.apply(o,e);var i=new(Function.bind.apply(t,o));return r&&n(i,r.prototype),i},i.apply(null,arguments)}function s(t,e,r,n){void 0===e&&(e=""),void 0===n&&(n={});var o=document.createElement(t);return e&&(o.className=e),Object.keys(n).forEach(function(t){if("function"==typeof n[t]){var e=0===t.indexOf("on")?t.substr(2).toLowerCase():t;o.addEventListener(e,n[t]);}else "html"===t?o.innerHTML=n[t]:"text"===t?o.innerText=n[t]:o.setAttribute(t,n[t]);}),r&&r.appendChild(o),o}function a(t){t.preventDefault(),t.stopPropagation();}var l=function(){return [].slice.call(arguments).filter(Boolean).join(" ").trim()};function c(t,e){t&&t.classList&&(Array.isArray(e)?e:[e]).forEach(function(e){t.classList.contains(e)||t.classList.add(e);});}function u(t,e){t&&t.classList&&(Array.isArray(e)?e:[e]).forEach(function(e){t.classList.contains(e)&&t.classList.remove(e);});}var h,p=13,d=40,f=38,m=[p,27,d,f,37,39],v=/*#__PURE__*/function(){function t(t){var e=this,r=t.handleSubmit,n=t.searchLabel,o=t.classNames,i=void 0===o?{}:o;this.container=void 0,this.form=void 0,this.input=void 0,this.handleSubmit=void 0,this.hasError=!1,this.container=s("div",l("geosearch",i.container)),this.form=s("form",["",i.form].join(" "),this.container,{autocomplete:"none",onClick:a,onDblClick:a,touchStart:a,touchEnd:a}),this.input=s("input",["glass",i.input].join(" "),this.form,{type:"text",placeholder:n||"search",onInput:this.onInput,onKeyUp:function(t){return e.onKeyUp(t)},onKeyPress:function(t){return e.onKeyPress(t)},onFocus:this.onFocus,onBlur:this.onBlur,onClick:function(){e.input.focus(),e.input.dispatchEvent(new Event("focus"));}}),this.handleSubmit=r;}var e=t.prototype;return e.onFocus=function(){c(this.form,"active");},e.onBlur=function(){u(this.form,"active");},e.onSubmit=function(t){try{var e=this;return a(t),u(r=e.container,"error"),c(r,"pending"),Promise.resolve(e.handleSubmit({query:e.input.value})).then(function(){u(e.container,"pending");})}catch(t){return Promise.reject(t)}var r;},e.onInput=function(){this.hasError&&(u(this.container,"error"),this.hasError=!1);},e.onKeyUp=function(t){27===t.keyCode&&(u(this.container,["pending","active"]),this.input.value="",document.body.focus(),document.body.blur());},e.onKeyPress=function(t){t.keyCode===p&&this.onSubmit(t);},e.setQuery=function(t){this.input.value=t;},t}(),g=/*#__PURE__*/function(){function t(t){var e=this,r=t.handleClick,n=t.classNames,o=void 0===n?{}:n,i=t.notFoundMessage;this.handleClick=void 0,this.selected=-1,this.results=[],this.container=void 0,this.resultItem=void 0,this.notFoundMessage=void 0,this.onClick=function(t){if("function"==typeof e.handleClick){var r=t.target;if(r&&e.container.contains(r)&&r.hasAttribute("data-key")){var n=Number(r.getAttribute("data-key"));e.clear(),e.handleClick({result:e.results[n]});}}},this.handleClick=r,this.notFoundMessage=i?s("div",l(o.notfound),void 0,{html:i}):void 0,this.container=s("div",l("results",o.resultlist)),this.container.addEventListener("click",this.onClick,!0),this.resultItem=s("div",l(o.item));}var e=t.prototype;return e.render=function(t,e){var r=this;void 0===t&&(t=[]),this.clear(),t.forEach(function(t,n){var o=r.resultItem.cloneNode(!0);o.setAttribute("data-key",""+n),o.innerHTML=e({result:t}),r.container.appendChild(o);}),t.length>0?(c(this.container.parentElement,"open"),c(this.container,"active")):this.notFoundMessage&&(this.container.appendChild(this.notFoundMessage),c(this.container.parentElement,"open")),this.results=t;},e.select=function(t){return Array.from(this.container.children).forEach(function(e,r){return r===t?c(e,"active"):u(e,"active")}),this.selected=t,this.results[t]},e.count=function(){return this.results?this.results.length:0},e.clear=function(){for(this.selected=-1;this.container.lastChild;)this.container.removeChild(this.container.lastChild);u(this.container.parentElement,"open"),u(this.container,"active");},t}(),y={position:"topleft",style:"button",showMarker:!0,showPopup:!1,popupFormat:function(t){return ""+t.result.label},resultFormat:function(t){return ""+t.result.label},marker:{icon:t&&leafletSrcExports.Icon?new leafletSrcExports.Icon.Default:void 0,draggable:!1},maxMarkers:1,maxSuggestions:5,retainZoomLevel:!1,animateZoom:!0,searchLabel:"Enter address",clearSearchLabel:"Clear search",notFoundMessage:"",messageHideDelay:3e3,zoomLevel:18,classNames:{container:"leaflet-bar leaflet-control leaflet-control-geosearch",button:"leaflet-bar-part leaflet-bar-part-single",resetButton:"reset",msgbox:"leaflet-bar message",form:"",input:"",resultlist:"",item:"",notfound:"leaflet-bar-notfound"},autoComplete:!0,autoCompleteDelay:250,autoClose:!1,keepResult:!1,updateMap:!0},b="Leaflet must be loaded before instantiating the GeoSearch control",E={options:e({},y),classNames:e({},y.classNames),initialize:function(r){var n,o,i,a,l=this;if(!t)throw new Error(b);if(!r.provider)throw new Error("Provider is missing from options");this.options=e({},y,r),this.classNames=e({},this.classNames,r.classNames),this.markers=new leafletSrcExports.FeatureGroup,this.classNames.container+=" leaflet-geosearch-"+this.options.style,this.searchElement=new v({searchLabel:this.options.searchLabel,classNames:{container:this.classNames.container,form:this.classNames.form,input:this.classNames.input},handleSubmit:function(t){return l.onSubmit(t)}}),this.button=s("a",this.classNames.button,this.searchElement.container,{title:this.options.searchLabel,href:"#",onClick:function(t){return l.onClick(t)}}),leafletSrcExports.DomEvent.disableClickPropagation(this.button),this.resetButton=s("button",this.classNames.resetButton,this.searchElement.form,{text:"×","aria-label":this.options.clearSearchLabel,onClick:function(){""===l.searchElement.input.value?l.close():l.clearResults(null,!0);}}),leafletSrcExports.DomEvent.disableClickPropagation(this.resetButton),this.options.autoComplete&&(this.resultList=new g({handleClick:function(t){var e=t.result;l.searchElement.input.value=e.label,l.onSubmit({query:e.label,data:e});},classNames:{resultlist:this.classNames.resultlist,item:this.classNames.item,notfound:this.classNames.notfound},notFoundMessage:this.options.notFoundMessage}),this.searchElement.form.appendChild(this.resultList.container),this.searchElement.input.addEventListener("keyup",(n=function(t){return l.autoSearch(t)},void 0===(o=this.options.autoCompleteDelay)&&(o=250),void 0===i&&(i=!1),function(){var t=[].slice.call(arguments);a&&clearTimeout(a),a=setTimeout(function(){a=null,i||n.apply(void 0,t);},o),i&&!a&&n.apply(void 0,t);}),!0),this.searchElement.input.addEventListener("keydown",function(t){return l.selectResult(t)},!0),this.searchElement.input.addEventListener("keydown",function(t){return l.clearResults(t,!0)},!0)),this.searchElement.form.addEventListener("click",function(t){t.preventDefault();},!1);},onAdd:function(e){var r=this.options,n=r.showMarker,o=r.style;if(this.map=e,n&&this.markers.addTo(e),"bar"===o){var i=e.getContainer().querySelector(".leaflet-control-container");this.container=s("div","leaflet-control-geosearch leaflet-geosearch-bar"),this.container.appendChild(this.searchElement.form),i.appendChild(this.container);}return leafletSrcExports.DomEvent.disableClickPropagation(this.searchElement.form),this.searchElement.container},onRemove:function(){var t;return null==(t=this.container)||t.remove(),this},open:function(){var t=this.searchElement,e=t.input;c(t.container,"active"),e.focus();},close:function(){u(this.searchElement.container,"active"),this.clearResults();},onClick:function(t){t.preventDefault(),t.stopPropagation(),this.searchElement.container.classList.contains("active")?this.close():this.open();},selectResult:function(t){if(-1!==[p,d,f].indexOf(t.keyCode))if(t.preventDefault(),t.keyCode!==p){var e=this.resultList.count()-1;if(!(e<0)){var r=this.resultList.selected,n=t.keyCode===d?r+1:r-1,o=this.resultList.select(n<0?e:n>e?0:n);this.searchElement.input.value=o.label;}}else {var i=this.resultList.select(this.resultList.selected);this.onSubmit({query:this.searchElement.input.value,data:i});}},clearResults:function(t,e){if(void 0===e&&(e=!1),!t||27===t.keyCode){var r=this.options,n=r.autoComplete;!e&&r.keepResult||(this.searchElement.input.value="",this.markers.clearLayers()),n&&this.resultList.clear();}},autoSearch:function(t){try{var e=this;if(m.indexOf(t.keyCode)>-1)return Promise.resolve();var r=t.target.value,n=e.options.provider,o=function(){if(r.length)return Promise.resolve(n.search({query:r})).then(function(t){t=t.slice(0,e.options.maxSuggestions),e.resultList.render(t,e.options.resultFormat);});e.resultList.clear();}();return Promise.resolve(o&&o.then?o.then(function(){}):void 0)}catch(t){return Promise.reject(t)}},onSubmit:function(t){try{var e=this;return Promise.resolve(e.options.provider.search(t)).then(function(r){r&&r.length>0&&e.showResult(r[0],t);})}catch(t){return Promise.reject(t)}},showResult:function(t,e){var r=this.options,n=r.autoClose,o=r.updateMap,i=this.markers.getLayers();i.length>=this.options.maxMarkers&&this.markers.removeLayer(i[0]);var s=this.addMarker(t,e);o&&this.centerMap(t),this.map.fireEvent("geosearch/showlocation",{location:t,marker:s}),n&&this.closeResults();},closeResults:function(){var t=this.searchElement.container;t.classList.contains("active")&&u(t,"active"),this.clearResults();},addMarker:function(e,r){var n=this,o=this.options,i=o.marker,s=o.showPopup,a=o.popupFormat,l=new leafletSrcExports.Marker([e.y,e.x],i),c=e.label;return "function"==typeof a&&(c=a({query:r,result:e})),l.bindPopup(c),this.markers.addLayer(l),s&&l.openPopup(),i.draggable&&l.on("dragend",function(t){n.map.fireEvent("geosearch/marker/dragend",{location:l.getLatLng(),event:t});}),l},centerMap:function(e){var r=this.options,n=r.retainZoomLevel,o=r.animateZoom,i=e.bounds?new leafletSrcExports.LatLngBounds(e.bounds):new leafletSrcExports.LatLng(e.y,e.x).toBounds(10),s=i.isValid()?i:this.markers.getBounds();!n&&i.isValid()&&!e.bounds||n||!i.isValid()?this.map.setView(s.getCenter(),this.getZoom(),{animate:o}):this.map.fitBounds(s,{animate:o});},getZoom:function(){var t=this.options,e=t.zoomLevel;return t.retainZoomLevel?this.map.getZoom():e}};function w(){if(!t)throw new Error(b);var e=leafletSrcExports.Control.extend(E);return i(e,[].slice.call(arguments))}!function(t){t[t.SEARCH=0]="SEARCH",t[t.REVERSE=1]="REVERSE";}(h||(h={}));var x,k=/*#__PURE__*/function(){function t(t){void 0===t&&(t={}),this.options=void 0,this.options=t;}var r=t.prototype;return r.getParamString=function(t){void 0===t&&(t={});var r=e({},this.options.params,t);return Object.keys(r).map(function(t){return encodeURIComponent(t)+"="+encodeURIComponent(r[t])}).join("&")},r.getUrl=function(t,e){return t+"?"+this.getParamString(e)},r.search=function(t){try{var e=this,r=e.endpoint({query:t.query,type:h.SEARCH});return Promise.resolve(fetch(r)).then(function(t){return Promise.resolve(t.json()).then(function(t){return e.parse({data:t})})})}catch(t){return Promise.reject(t)}},t}();!function(t){t[t.INITIALIZED=0]="INITIALIZED",t[t.LOADING=1]="LOADING",t[t.SUCCESS=2]="SUCCESS",t[t.FAILURE=3]="FAILURE";}(x||(x={}));var O=/*#__PURE__*/function(t){function e(e){var r;void 0===e&&(e={}),(r=t.call(this,e)||this).searchUrl=void 0,r.reverseUrl=void 0;var n="https://nominatim.openstreetmap.org";return r.searchUrl=e.searchUrl||n+"/search",r.reverseUrl=e.reverseUrl||n+"/reverse",r}r(e,t);var n=e.prototype;return n.endpoint=function(t){var e=t.query,r=t.type,n="string"==typeof e?{q:e}:e;return n.format="json",this.getUrl(r===h.REVERSE?this.reverseUrl:this.searchUrl,n)},n.parse=function(t){return (Array.isArray(t.data)?t.data:[t.data]).map(function(t){return {x:Number(t.lon),y:Number(t.lat),label:t.display_name,bounds:[[parseFloat(t.boundingbox[0]),parseFloat(t.boundingbox[2])],[parseFloat(t.boundingbox[1]),parseFloat(t.boundingbox[3])]],raw:t}})},e}(k);
 
-    /* src/components/map/Leaflet.svelte generated by Svelte v3.59.2 */
+    // Paired down version of: https://leafletjs.com/examples/choropleth/us-states.js
 
-    const { Error: Error_1, console: console_1$1 } = globals;
-    const file$6 = "src/components/map/Leaflet.svelte";
+    const statesData = {"type":"FeatureCollection","features":[
+      {"type":"Feature","id":"09","properties":{"name":"Connecticut","density":739.1},"geometry":{"type":"Polygon","coordinates":[[[-73.053528,42.039048],[-71.799309,42.022617],[-71.799309,42.006186],[-71.799309,41.414677],[-71.859555,41.321569],[-71.947186,41.338],[-72.385341,41.261322],[-72.905651,41.28323],[-73.130205,41.146307],[-73.371191,41.102491],[-73.655992,40.987475],[-73.727192,41.102491],[-73.48073,41.21203],[-73.55193,41.294184],[-73.486206,42.050002],[-73.053528,42.039048]]]}},
+      {"type":"Feature","id":"10","properties":{"name":"Delaware","density":464.3},"geometry":{"type":"Polygon","coordinates":[[[-75.414089,39.804456],[-75.507197,39.683964],[-75.611259,39.61824],[-75.589352,39.459409],[-75.441474,39.311532],[-75.403136,39.065069],[-75.189535,38.807653],[-75.09095,38.796699],[-75.047134,38.451652],[-75.693413,38.462606],[-75.786521,39.722302],[-75.616736,39.831841],[-75.414089,39.804456]]]}},
+      {"type":"Feature","id":"11","properties":{"name":"District of Columbia","density":10065},"geometry":{"type":"Polygon","coordinates":[[[-77.035264,38.993869],[-76.909294,38.895284],[-77.040741,38.791222],[-77.117418,38.933623],[-77.035264,38.993869]]]}},
+      {"type":"Feature","id":"23","properties":{"name":"Maine","density":43.04},"geometry":{"type":"Polygon","coordinates":[[[-70.703921,43.057759],[-70.824413,43.128959],[-70.807983,43.227544],[-70.966814,43.34256],[-71.032537,44.657025],[-71.08183,45.303304],[-70.649151,45.440228],[-70.720352,45.511428],[-70.556043,45.664782],[-70.386258,45.735983],[-70.41912,45.796229],[-70.260289,45.889337],[-70.309581,46.064599],[-70.210996,46.327492],[-70.057642,46.415123],[-69.997395,46.694447],[-69.225147,47.461219],[-69.044408,47.428357],[-69.033454,47.242141],[-68.902007,47.176418],[-68.578868,47.285957],[-68.376221,47.285957],[-68.233821,47.357157],[-67.954497,47.198326],[-67.790188,47.066879],[-67.779235,45.944106],[-67.801142,45.675736],[-67.456095,45.604536],[-67.505388,45.48952],[-67.417757,45.379982],[-67.488957,45.281397],[-67.346556,45.128042],[-67.16034,45.160904],[-66.979601,44.804903],[-67.187725,44.646072],[-67.308218,44.706318],[-67.406803,44.596779],[-67.549203,44.624164],[-67.565634,44.531056],[-67.75185,44.54201],[-68.047605,44.328409],[-68.118805,44.476286],[-68.222867,44.48724],[-68.173574,44.328409],[-68.403606,44.251732],[-68.458375,44.377701],[-68.567914,44.311978],[-68.82533,44.311978],[-68.830807,44.459856],[-68.984161,44.426994],[-68.956777,44.322932],[-69.099177,44.103854],[-69.071793,44.043608],[-69.258008,43.923115],[-69.444224,43.966931],[-69.553763,43.840961],[-69.707118,43.82453],[-69.833087,43.720469],[-69.986442,43.742376],[-70.030257,43.851915],[-70.254812,43.676653],[-70.194565,43.567114],[-70.358873,43.528776],[-70.369827,43.435668],[-70.556043,43.320652],[-70.703921,43.057759]]]}},
+      {"type":"Feature","id":"24","properties":{"name":"Maryland","density":596.3},"geometry":{"type":"MultiPolygon","coordinates":[[[[-75.994645,37.95325],[-76.016553,37.95325],[-76.043938,37.95325],[-75.994645,37.95325]]],[[[-79.477979,39.722302],[-75.786521,39.722302],[-75.693413,38.462606],[-75.047134,38.451652],[-75.244304,38.029928],[-75.397659,38.013497],[-75.671506,37.95325],[-75.885106,37.909435],[-75.879629,38.073743],[-75.961783,38.139466],[-75.846768,38.210667],[-76.000122,38.374975],[-76.049415,38.303775],[-76.257538,38.320205],[-76.328738,38.500944],[-76.263015,38.500944],[-76.257538,38.736453],[-76.191815,38.829561],[-76.279446,39.147223],[-76.169907,39.333439],[-76.000122,39.366301],[-75.972737,39.557994],[-76.098707,39.536086],[-76.104184,39.437501],[-76.367077,39.311532],[-76.443754,39.196516],[-76.460185,38.906238],[-76.55877,38.769315],[-76.514954,38.539283],[-76.383508,38.380452],[-76.399939,38.259959],[-76.317785,38.139466],[-76.3616,38.057312],[-76.591632,38.216144],[-76.920248,38.292821],[-77.018833,38.446175],[-77.205049,38.358544],[-77.276249,38.479037],[-77.128372,38.632391],[-77.040741,38.791222],[-76.909294,38.895284],[-77.035264,38.993869],[-77.117418,38.933623],[-77.248864,39.026731],[-77.456988,39.076023],[-77.456988,39.223901],[-77.566527,39.306055],[-77.719881,39.322485],[-77.834897,39.601809],[-78.004682,39.601809],[-78.174467,39.694917],[-78.267575,39.61824],[-78.431884,39.623717],[-78.470222,39.514178],[-78.765977,39.585379],[-78.963147,39.437501],[-79.094593,39.470363],[-79.291763,39.300578],[-79.488933,39.20747],[-79.477979,39.722302]]]]}},
+      {"type":"Feature","id":"25","properties":{"name":"Massachusetts","density":840.2},"geometry":{"type":"Polygon","coordinates":[[[-70.917521,42.887974],[-70.818936,42.871543],[-70.780598,42.696281],[-70.824413,42.55388],[-70.983245,42.422434],[-70.988722,42.269079],[-70.769644,42.247172],[-70.638197,42.08834],[-70.660105,41.962371],[-70.550566,41.929509],[-70.539613,41.814493],[-70.260289,41.715908],[-69.937149,41.809016],[-70.008349,41.672093],[-70.484843,41.5516],[-70.660105,41.546123],[-70.764167,41.639231],[-70.928475,41.611847],[-70.933952,41.540646],[-71.120168,41.496831],[-71.196845,41.67757],[-71.22423,41.710431],[-71.328292,41.781632],[-71.383061,42.01714],[-71.530939,42.01714],[-71.799309,42.006186],[-71.799309,42.022617],[-73.053528,42.039048],[-73.486206,42.050002],[-73.508114,42.08834],[-73.267129,42.745573],[-72.456542,42.729142],[-71.29543,42.696281],[-71.185891,42.789389],[-70.917521,42.887974]]]}},
+      {"type":"Feature","id":"33","properties":{"name":"New Hampshire","density":147},"geometry":{"type":"Polygon","coordinates":[[[-71.08183,45.303304],[-71.032537,44.657025],[-70.966814,43.34256],[-70.807983,43.227544],[-70.824413,43.128959],[-70.703921,43.057759],[-70.818936,42.871543],[-70.917521,42.887974],[-71.185891,42.789389],[-71.29543,42.696281],[-72.456542,42.729142],[-72.544173,42.80582],[-72.533219,42.953697],[-72.445588,43.008466],[-72.456542,43.150867],[-72.379864,43.572591],[-72.204602,43.769761],[-72.116971,43.994316],[-72.02934,44.07647],[-72.034817,44.322932],[-71.700724,44.41604],[-71.536416,44.585825],[-71.629524,44.750133],[-71.4926,44.914442],[-71.503554,45.013027],[-71.361154,45.270443],[-71.131122,45.243058],[-71.08183,45.303304]]]}},
+      {"type":"Feature","id":"34","properties":{"name":"New Jersey","density":1189 },"geometry":{"type":"Polygon","coordinates":[[[-74.236547,41.14083],[-73.902454,40.998429],[-74.022947,40.708151],[-74.187255,40.642428],[-74.274886,40.489074],[-74.001039,40.412397],[-73.979131,40.297381],[-74.099624,39.760641],[-74.411809,39.360824],[-74.614456,39.245808],[-74.795195,38.993869],[-74.888303,39.158177],[-75.178581,39.240331],[-75.534582,39.459409],[-75.55649,39.607286],[-75.561967,39.629194],[-75.507197,39.683964],[-75.414089,39.804456],[-75.145719,39.88661],[-75.129289,39.963288],[-74.82258,40.127596],[-74.773287,40.215227],[-75.058088,40.417874],[-75.069042,40.543843],[-75.195012,40.576705],[-75.205966,40.691721],[-75.052611,40.866983],[-75.134765,40.971045],[-74.882826,41.179168],[-74.828057,41.288707],[-74.69661,41.359907],[-74.236547,41.14083]]]}},
+      {"type":"Feature","id":"36","properties":{"name":"New York","density":412.3},"geometry":{"type":"Polygon","coordinates":[[[-73.343806,45.013027],[-73.332852,44.804903],[-73.387622,44.618687],[-73.294514,44.437948],[-73.321898,44.246255],[-73.436914,44.043608],[-73.349283,43.769761],[-73.404052,43.687607],[-73.245221,43.523299],[-73.278083,42.833204],[-73.267129,42.745573],[-73.508114,42.08834],[-73.486206,42.050002],[-73.55193,41.294184],[-73.48073,41.21203],[-73.727192,41.102491],[-73.655992,40.987475],[-73.22879,40.905321],[-73.141159,40.965568],[-72.774204,40.965568],[-72.587988,40.998429],[-72.28128,41.157261],[-72.259372,41.042245],[-72.100541,40.992952],[-72.467496,40.845075],[-73.239744,40.625997],[-73.562884,40.582182],[-73.776484,40.593136],[-73.935316,40.543843],[-74.022947,40.708151],[-73.902454,40.998429],[-74.236547,41.14083],[-74.69661,41.359907],[-74.740426,41.431108],[-74.89378,41.436584],[-75.074519,41.60637],[-75.052611,41.754247],[-75.173104,41.869263],[-75.249781,41.863786],[-75.35932,42.000709],[-79.76278,42.000709],[-79.76278,42.252649],[-79.76278,42.269079],[-79.149363,42.55388],[-79.050778,42.690804],[-78.853608,42.783912],[-78.930285,42.953697],[-79.012439,42.986559],[-79.072686,43.260406],[-78.486653,43.375421],[-77.966344,43.369944],[-77.75822,43.34256],[-77.533665,43.233021],[-77.391265,43.276836],[-76.958587,43.271359],[-76.695693,43.34256],[-76.41637,43.523299],[-76.235631,43.528776],[-76.230154,43.802623],[-76.137046,43.961454],[-76.3616,44.070993],[-76.312308,44.196962],[-75.912491,44.366748],[-75.764614,44.514625],[-75.282643,44.848718],[-74.828057,45.018503],[-74.148916,44.991119],[-73.343806,45.013027]]]}},
+      {"type":"Feature","id":"42","properties":{"name":"Pennsylvania","density":284.3},"geometry":{"type":"Polygon","coordinates":[[[-79.76278,42.252649],[-79.76278,42.000709],[-75.35932,42.000709],[-75.249781,41.863786],[-75.173104,41.869263],[-75.052611,41.754247],[-75.074519,41.60637],[-74.89378,41.436584],[-74.740426,41.431108],[-74.69661,41.359907],[-74.828057,41.288707],[-74.882826,41.179168],[-75.134765,40.971045],[-75.052611,40.866983],[-75.205966,40.691721],[-75.195012,40.576705],[-75.069042,40.543843],[-75.058088,40.417874],[-74.773287,40.215227],[-74.82258,40.127596],[-75.129289,39.963288],[-75.145719,39.88661],[-75.414089,39.804456],[-75.616736,39.831841],[-75.786521,39.722302],[-79.477979,39.722302],[-80.518598,39.722302],[-80.518598,40.636951],[-80.518598,41.978802],[-80.518598,41.978802],[-80.332382,42.033571],[-79.76278,42.269079],[-79.76278,42.252649]]]}},
+      {"type":"Feature","id":"44","properties":{"name":"Rhode Island","density":1006 },"geometry":{"type":"MultiPolygon","coordinates":[[[[-71.196845,41.67757],[-71.120168,41.496831],[-71.317338,41.474923],[-71.196845,41.67757]]],[[[-71.530939,42.01714],[-71.383061,42.01714],[-71.328292,41.781632],[-71.22423,41.710431],[-71.344723,41.726862],[-71.448785,41.578985],[-71.481646,41.370861],[-71.859555,41.321569],[-71.799309,41.414677],[-71.799309,42.006186],[-71.530939,42.01714]]]]}},
+      {"type":"Feature","id":"50","properties":{"name":"Vermont","density":67.73},"geometry":{"type":"Polygon","coordinates":[[[-71.503554,45.013027],[-71.4926,44.914442],[-71.629524,44.750133],[-71.536416,44.585825],[-71.700724,44.41604],[-72.034817,44.322932],[-72.02934,44.07647],[-72.116971,43.994316],[-72.204602,43.769761],[-72.379864,43.572591],[-72.456542,43.150867],[-72.445588,43.008466],[-72.533219,42.953697],[-72.544173,42.80582],[-72.456542,42.729142],[-73.267129,42.745573],[-73.278083,42.833204],[-73.245221,43.523299],[-73.404052,43.687607],[-73.349283,43.769761],[-73.436914,44.043608],[-73.321898,44.246255],[-73.294514,44.437948],[-73.387622,44.618687],[-73.332852,44.804903],[-73.343806,45.013027],[-72.308664,45.002073],[-71.503554,45.013027]]]}},
+      {"type":"Feature","id":"54","properties":{"name":"West Virginia","density":77.06},"geometry":{"type":"Polygon","coordinates":[[[-80.518598,40.636951],[-80.518598,39.722302],[-79.477979,39.722302],[-79.488933,39.20747],[-79.291763,39.300578],[-79.094593,39.470363],[-78.963147,39.437501],[-78.765977,39.585379],[-78.470222,39.514178],[-78.431884,39.623717],[-78.267575,39.61824],[-78.174467,39.694917],[-78.004682,39.601809],[-77.834897,39.601809],[-77.719881,39.322485],[-77.82942,39.130793],[-78.349729,39.464886],[-78.404499,39.169131],[-78.870039,38.763838],[-78.996008,38.851469],[-79.209609,38.495467],[-79.313671,38.413313],[-79.477979,38.457129],[-79.647764,38.594052],[-79.724442,38.364021],[-79.921611,38.177805],[-79.998289,37.997066],[-80.184505,37.849189],[-80.294043,37.690357],[-80.29952,37.509618],[-80.474782,37.421987],[-80.513121,37.482234],[-80.967707,37.290541],[-81.225123,37.235771],[-81.362047,37.339833],[-81.55374,37.208387],[-81.679709,37.20291],[-81.849494,37.285064],[-81.986418,37.454849],[-81.969987,37.537003],[-82.101434,37.553434],[-82.293127,37.668449],[-82.342419,37.783465],[-82.50125,37.931343],[-82.621743,38.123036],[-82.594358,38.424267],[-82.331465,38.446175],[-82.293127,38.577622],[-82.172634,38.632391],[-82.221926,38.785745],[-82.03571,39.026731],[-81.887833,38.873376],[-81.783771,38.966484],[-81.811156,39.0815],[-81.685186,39.273193],[-81.57017,39.267716],[-81.455155,39.410117],[-81.345616,39.344393],[-81.219646,39.388209],[-80.830783,39.711348],[-80.737675,40.078303],[-80.600752,40.319289],[-80.595275,40.472643],[-80.666475,40.582182],[-80.518598,40.636951]]]}},
+    ]};
 
-    // (67:1) {#if leafMap}
+    /* src/components/locationPicker/Leaflet.svelte generated by Svelte v3.59.2 */
+
+    const { Error: Error_1 } = globals;
+    const file$9 = "src/components/locationPicker/Leaflet.svelte";
+
+    // (71:1) {#if leafMap}
     function create_if_block$3(ctx) {
     	let current;
     	const default_slot_template = /*#slots*/ ctx[8].default;
@@ -15335,14 +15394,14 @@ var app = (function () {
     		block,
     		id: create_if_block$3.name,
     		type: "if",
-    		source: "(67:1) {#if leafMap}",
+    		source: "(71:1) {#if leafMap}",
     		ctx
     	});
 
     	return block;
     }
 
-    function create_fragment$6(ctx) {
+    function create_fragment$9(ctx) {
     	let div;
     	let current;
     	let if_block = /*leafMap*/ ctx[0] && create_if_block$3(ctx);
@@ -15351,10 +15410,9 @@ var app = (function () {
     		c: function create() {
     			div = element("div");
     			if (if_block) if_block.c();
-    			set_style(div, "width", "80%");
+    			set_style(div, "width", "100%");
     			set_style(div, "height", "100%");
-    			set_style(div, "margin", "0 auto");
-    			add_location(div, file$6, 65, 0, 2390);
+    			add_location(div, file$9, 69, 0, 2491);
     		},
     		l: function claim(nodes) {
     			throw new Error_1("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -15407,7 +15465,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$6.name,
+    		id: create_fragment$9.name,
     		type: "component",
     		source: "",
     		ctx
@@ -15416,13 +15474,13 @@ var app = (function () {
     	return block;
     }
 
-    function instance$6($$self, $$props, $$invalidate) {
+    function instance$9($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Leaflet', slots, ['default']);
     	let { bounds = undefined } = $$props;
     	let { view = undefined } = $$props;
     	let { zoom = undefined } = $$props;
-    	let { locations = undefined } = $$props;
+    	let { locations = null } = $$props;
     	let { handleMapClick = e => null } = $$props;
     	const dispatch = createEventDispatcher();
     	let leafMap;
@@ -15440,9 +15498,39 @@ var app = (function () {
     			attribution: `&copy;<a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>,&copy;<a href="https://carto.com/attributions" target="_blank">CARTO</a>`
     		}).addTo(leafMap);
 
+    		leafletSrcExports.geoJson(statesData, {
+    			style: {
+    				color: '#8c877b',
+    				weight: 1.5,
+    				fillOpacity: 0
+    			}
+    		}).addTo(leafMap);
+
     		const provider = new O();
     		leafMap.addControl(w({ provider, style: 'bar' }));
     		leafMap.on('click', handleMapClick);
+
+    		if (bounds) {
+    			leafMap.fitBounds(bounds);
+    		} else if (view && zoom) {
+    			leafMap.setView(view, zoom);
+    		} else if (locations) {
+    			const boundsObj = locations.reduce(
+    				(acc, loc) => {
+    					if (loc.lat < acc.ll.lat) acc.ll.lat = loc.lat;
+    					if (loc.lon < acc.ll.lon) acc.ll.lon = loc.lon;
+    					if (loc.lat > acc.ur.lat) acc.ur.lat = loc.lat;
+    					if (loc.lon > acc.ur.lon) acc.ur.lon = loc.lon;
+    					return acc;
+    				},
+    				{
+    					ll: { lat: 999, lon: 999 },
+    					ur: { lat: -999, lon: -999 }
+    				}
+    			);
+
+    			leafMap.fitBounds([[boundsObj.ll.lat, boundsObj.ll.lon], [boundsObj.ur.lat, boundsObj.ur.lon]], { padding: [80, 80] });
+    		}
     	});
 
     	onDestroy(() => {
@@ -15454,11 +15542,10 @@ var app = (function () {
     	});
 
     	setContext('map', { getMap: () => leafMap });
-    	console.log('end of script: leaflet');
     	const writable_props = ['bounds', 'view', 'zoom', 'locations', 'handleMapClick'];
 
     	Object.keys($$props).forEach(key => {
-    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1$1.warn(`<Leaflet> was created with unknown prop '${key}'`);
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<Leaflet> was created with unknown prop '${key}'`);
     	});
 
     	function div_binding($$value) {
@@ -15484,8 +15571,10 @@ var app = (function () {
     		createEventDispatcher,
     		tileLayer: leafletSrcExports.tileLayer,
     		map: leafletSrcExports.map,
+    		geoJson: leafletSrcExports.geoJson,
     		OpenStreetMapProvider: O,
     		GeoSearchControl: w,
+    		statesData,
     		bounds,
     		view,
     		zoom,
@@ -15510,43 +15599,6 @@ var app = (function () {
     		$$self.$inject_state($$props.$$inject);
     	}
 
-    	$$self.$$.update = () => {
-    		if ($$self.$$.dirty & /*leafMap, bounds, view, zoom, locations*/ 61) {
-    			if (leafMap) {
-    				if (bounds) {
-    					leafMap.fitBounds(bounds);
-    				} else if (view && zoom) {
-    					leafMap.setView(view, zoom);
-    				} else if (locations) {
-    					const boundsObj = locations.reduce(
-    						(acc, loc) => {
-    							if (loc.lat < acc.ll.lat) acc.ll.lat = loc.lat;
-    							if (loc.lon < acc.ll.lon) acc.ll.lon = loc.lon;
-    							if (loc.lat > acc.ur.lat) acc.ur.lat = loc.lat;
-    							if (loc.lon > acc.ur.lon) acc.ur.lon = loc.lon;
-    							return acc;
-    						},
-    						{
-    							ll: { lat: 999, lon: 999 },
-    							ur: { lat: -999, lon: -999 }
-    						}
-    					);
-
-    					leafMap.fitBounds(
-    						[
-    							[boundsObj.ll.lat, boundsObj.ll.lon],
-    							[boundsObj.ur.lat, boundsObj.ur.lon]
-    						],
-    						{
-    							paddingTopLeft: [10, 15],
-    							paddingBottomRight: [10, 5]
-    						}
-    					);
-    				}
-    			}
-    		}
-    	};
-
     	return [
     		leafMap,
     		mapElement,
@@ -15565,7 +15617,7 @@ var app = (function () {
     	constructor(options) {
     		super(options);
 
-    		init(this, options, instance$6, create_fragment$6, safe_not_equal, {
+    		init(this, options, instance$9, create_fragment$9, safe_not_equal, {
     			bounds: 2,
     			view: 3,
     			zoom: 4,
@@ -15577,7 +15629,7 @@ var app = (function () {
     			component: this,
     			tagName: "Leaflet",
     			options,
-    			id: create_fragment$6.name
+    			id: create_fragment$9.name
     		});
     	}
 
@@ -15622,8 +15674,8 @@ var app = (function () {
     	}
     }
 
-    /* src/components/map/Marker.svelte generated by Svelte v3.59.2 */
-    const file$5 = "src/components/map/Marker.svelte";
+    /* src/components/locationPicker/Marker.svelte generated by Svelte v3.59.2 */
+    const file$8 = "src/components/locationPicker/Marker.svelte";
 
     // (39:1) {#if leafMarker}
     function create_if_block$2(ctx) {
@@ -15683,7 +15735,7 @@ var app = (function () {
     	return block;
     }
 
-    function create_fragment$5(ctx) {
+    function create_fragment$8(ctx) {
     	let div;
     	let current;
     	let if_block = /*leafMarker*/ ctx[0] && create_if_block$2(ctx);
@@ -15692,7 +15744,7 @@ var app = (function () {
     		c: function create() {
     			div = element("div");
     			if (if_block) if_block.c();
-    			add_location(div, file$5, 37, 0, 1082);
+    			add_location(div, file$8, 37, 0, 1082);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -15745,7 +15797,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$5.name,
+    		id: create_fragment$8.name,
     		type: "component",
     		source: "",
     		ctx
@@ -15754,7 +15806,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$5($$self, $$props, $$invalidate) {
+    function instance$8($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Marker', slots, ['default']);
     	let { width } = $$props;
@@ -15882,7 +15934,7 @@ var app = (function () {
     	constructor(options) {
     		super(options);
 
-    		init(this, options, instance$5, create_fragment$5, safe_not_equal, {
+    		init(this, options, instance$8, create_fragment$8, safe_not_equal, {
     			width: 2,
     			height: 3,
     			latLng: 4,
@@ -15894,7 +15946,7 @@ var app = (function () {
     			component: this,
     			tagName: "Marker",
     			options,
-    			id: create_fragment$5.name
+    			id: create_fragment$8.name
     		});
     	}
 
@@ -15939,8 +15991,8 @@ var app = (function () {
     	}
     }
 
-    /* src/components/map/Tooltip.svelte generated by Svelte v3.59.2 */
-    const file$4 = "src/components/map/Tooltip.svelte";
+    /* src/components/locationPicker/Tooltip.svelte generated by Svelte v3.59.2 */
+    const file$7 = "src/components/locationPicker/Tooltip.svelte";
 
     // (29:1) {#if open || isActive}
     function create_if_block$1(ctx) {
@@ -16000,7 +16052,7 @@ var app = (function () {
     	return block;
     }
 
-    function create_fragment$4(ctx) {
+    function create_fragment$7(ctx) {
     	let div;
     	let current;
     	let if_block = (/*open*/ ctx[2] || /*isActive*/ ctx[0]) && create_if_block$1(ctx);
@@ -16010,7 +16062,7 @@ var app = (function () {
     			div = element("div");
     			if (if_block) if_block.c();
     			attr_dev(div, "class", "tooltip-adjustment");
-    			add_location(div, file$4, 27, 0, 842);
+    			add_location(div, file$7, 27, 0, 842);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16063,7 +16115,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$4.name,
+    		id: create_fragment$7.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16072,7 +16124,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$4($$self, $$props, $$invalidate) {
+    function instance$7($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Tooltip', slots, ['default']);
     	let leafTooltip;
@@ -16157,13 +16209,13 @@ var app = (function () {
     class Tooltip extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$4, create_fragment$4, safe_not_equal, { isActive: 0 });
+    		init(this, options, instance$7, create_fragment$7, safe_not_equal, { isActive: 0 });
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Tooltip",
     			options,
-    			id: create_fragment$4.name
+    			id: create_fragment$7.name
     		});
     	}
 
@@ -16176,11 +16228,11 @@ var app = (function () {
     	}
     }
 
-    /* src/components/map/pin-red.svelte generated by Svelte v3.59.2 */
+    /* src/components/locationPicker/pin-red.svelte generated by Svelte v3.59.2 */
 
-    const file$3 = "src/components/map/pin-red.svelte";
+    const file$6 = "src/components/locationPicker/pin-red.svelte";
 
-    function create_fragment$3(ctx) {
+    function create_fragment$6(ctx) {
     	let svg;
     	let line;
     	let circle0;
@@ -16201,17 +16253,17 @@ var app = (function () {
     			attr_dev(line, "y1", "20");
     			attr_dev(line, "x2", "10");
     			attr_dev(line, "y2", "38");
-    			add_location(line, file$3, 1, 0, 214);
+    			add_location(line, file$6, 1, 0, 214);
     			set_style(circle0, "fill", "#DD352E");
     			attr_dev(circle0, "cx", "10");
     			attr_dev(circle0, "cy", "10");
     			attr_dev(circle0, "r", "10");
-    			add_location(circle0, file$3, 2, 0, 345);
+    			add_location(circle0, file$6, 2, 0, 345);
     			set_style(circle1, "fill", "#F76363");
     			attr_dev(circle1, "cx", "6");
     			attr_dev(circle1, "cy", "7");
     			attr_dev(circle1, "r", "2");
-    			add_location(circle1, file$3, 3, 0, 400);
+    			add_location(circle1, file$6, 3, 0, 400);
     			attr_dev(svg, "xmlns", "http://www.w3.org/2000/svg");
     			attr_dev(svg, "xmlns:xlink", "http://www.w3.org/1999/xlink");
     			attr_dev(svg, "version", "1.1");
@@ -16221,7 +16273,7 @@ var app = (function () {
     			set_style(svg, "enable-background", "new 0 0 39.5 39.5");
     			attr_dev(svg, "xml:space", "preserve");
     			attr_dev(svg, "viewBox", "0 0 20 39.5");
-    			add_location(svg, file$3, 0, 0, 0);
+    			add_location(svg, file$6, 0, 0, 0);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16242,7 +16294,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$3.name,
+    		id: create_fragment$6.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16251,7 +16303,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$3($$self, $$props) {
+    function instance$6($$self, $$props) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Pin_red', slots, []);
     	const writable_props = [];
@@ -16266,22 +16318,22 @@ var app = (function () {
     class Pin_red extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$3, create_fragment$3, safe_not_equal, {});
+    		init(this, options, instance$6, create_fragment$6, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Pin_red",
     			options,
-    			id: create_fragment$3.name
+    			id: create_fragment$6.name
     		});
     	}
     }
 
-    /* src/components/map/pin-blue.svelte generated by Svelte v3.59.2 */
+    /* src/components/locationPicker/pin-blue.svelte generated by Svelte v3.59.2 */
 
-    const file$2 = "src/components/map/pin-blue.svelte";
+    const file$5 = "src/components/locationPicker/pin-blue.svelte";
 
-    function create_fragment$2(ctx) {
+    function create_fragment$5(ctx) {
     	let svg;
     	let line;
     	let circle0;
@@ -16332,32 +16384,32 @@ var app = (function () {
     			attr_dev(line, "y1", "20");
     			attr_dev(line, "x2", "10");
     			attr_dev(line, "y2", "38");
-    			add_location(line, file$2, 1, 0, 214);
+    			add_location(line, file$5, 1, 0, 214);
     			set_style(circle0, "fill", "#1777f2");
     			attr_dev(circle0, "cx", "10");
     			attr_dev(circle0, "cy", "10");
     			attr_dev(circle0, "r", "10");
-    			add_location(circle0, file$2, 2, 0, 345);
+    			add_location(circle0, file$5, 2, 0, 345);
     			set_style(circle1, "fill", "#a0caff");
     			attr_dev(circle1, "cx", "6");
     			attr_dev(circle1, "cy", "7");
     			attr_dev(circle1, "r", "2");
-    			add_location(circle1, file$2, 3, 0, 400);
-    			add_location(g0, file$2, 4, 0, 452);
-    			add_location(g1, file$2, 6, 0, 461);
-    			add_location(g2, file$2, 8, 0, 470);
-    			add_location(g3, file$2, 10, 0, 479);
-    			add_location(g4, file$2, 12, 0, 488);
-    			add_location(g5, file$2, 14, 0, 497);
-    			add_location(g6, file$2, 16, 0, 506);
-    			add_location(g7, file$2, 18, 0, 515);
-    			add_location(g8, file$2, 20, 0, 524);
-    			add_location(g9, file$2, 22, 0, 533);
-    			add_location(g10, file$2, 24, 0, 542);
-    			add_location(g11, file$2, 26, 0, 551);
-    			add_location(g12, file$2, 28, 0, 560);
-    			add_location(g13, file$2, 30, 0, 569);
-    			add_location(g14, file$2, 32, 0, 578);
+    			add_location(circle1, file$5, 3, 0, 400);
+    			add_location(g0, file$5, 4, 0, 452);
+    			add_location(g1, file$5, 6, 0, 461);
+    			add_location(g2, file$5, 8, 0, 470);
+    			add_location(g3, file$5, 10, 0, 479);
+    			add_location(g4, file$5, 12, 0, 488);
+    			add_location(g5, file$5, 14, 0, 497);
+    			add_location(g6, file$5, 16, 0, 506);
+    			add_location(g7, file$5, 18, 0, 515);
+    			add_location(g8, file$5, 20, 0, 524);
+    			add_location(g9, file$5, 22, 0, 533);
+    			add_location(g10, file$5, 24, 0, 542);
+    			add_location(g11, file$5, 26, 0, 551);
+    			add_location(g12, file$5, 28, 0, 560);
+    			add_location(g13, file$5, 30, 0, 569);
+    			add_location(g14, file$5, 32, 0, 578);
     			attr_dev(svg, "xmlns", "http://www.w3.org/2000/svg");
     			attr_dev(svg, "xmlns:xlink", "http://www.w3.org/1999/xlink");
     			attr_dev(svg, "version", "1.1");
@@ -16367,7 +16419,7 @@ var app = (function () {
     			set_style(svg, "enable-background", "new 0 0 39.5 39.5");
     			attr_dev(svg, "xml:space", "preserve");
     			attr_dev(svg, "viewBox", "0 0 20 39.5");
-    			add_location(svg, file$2, 0, 0, 0);
+    			add_location(svg, file$5, 0, 0, 0);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16403,7 +16455,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$2.name,
+    		id: create_fragment$5.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16412,7 +16464,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$2($$self, $$props) {
+    function instance$5($$self, $$props) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Pin_blue', slots, []);
     	const writable_props = [];
@@ -16427,11 +16479,520 @@ var app = (function () {
     class Pin_blue extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$2, create_fragment$2, safe_not_equal, {});
+    		init(this, options, instance$5, create_fragment$5, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Pin_blue",
+    			options,
+    			id: create_fragment$5.name
+    		});
+    	}
+    }
+
+    /* src/components/Button.svelte generated by Svelte v3.59.2 */
+
+    const file$4 = "src/components/Button.svelte";
+
+    function create_fragment$4(ctx) {
+    	let button;
+    	let button_class_value;
+    	let current;
+    	let mounted;
+    	let dispose;
+    	const default_slot_template = /*#slots*/ ctx[3].default;
+    	const default_slot = create_slot(default_slot_template, ctx, /*$$scope*/ ctx[2], null);
+
+    	const block = {
+    		c: function create() {
+    			button = element("button");
+    			if (default_slot) default_slot.c();
+    			attr_dev(button, "class", button_class_value = "" + (null_to_empty(`btn-container btn-${/*btnType*/ ctx[0]}`) + " svelte-4g4aez"));
+    			add_location(button, file$4, 4, 0, 94);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, button, anchor);
+
+    			if (default_slot) {
+    				default_slot.m(button, null);
+    			}
+
+    			current = true;
+
+    			if (!mounted) {
+    				dispose = listen_dev(
+    					button,
+    					"click",
+    					function () {
+    						if (is_function(/*onClick*/ ctx[1])) /*onClick*/ ctx[1].apply(this, arguments);
+    					},
+    					false,
+    					false,
+    					false,
+    					false
+    				);
+
+    				mounted = true;
+    			}
+    		},
+    		p: function update(new_ctx, [dirty]) {
+    			ctx = new_ctx;
+
+    			if (default_slot) {
+    				if (default_slot.p && (!current || dirty & /*$$scope*/ 4)) {
+    					update_slot_base(
+    						default_slot,
+    						default_slot_template,
+    						ctx,
+    						/*$$scope*/ ctx[2],
+    						!current
+    						? get_all_dirty_from_scope(/*$$scope*/ ctx[2])
+    						: get_slot_changes(default_slot_template, /*$$scope*/ ctx[2], dirty, null),
+    						null
+    					);
+    				}
+    			}
+
+    			if (!current || dirty & /*btnType*/ 1 && button_class_value !== (button_class_value = "" + (null_to_empty(`btn-container btn-${/*btnType*/ ctx[0]}`) + " svelte-4g4aez"))) {
+    				attr_dev(button, "class", button_class_value);
+    			}
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(default_slot, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(default_slot, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(button);
+    			if (default_slot) default_slot.d(detaching);
+    			mounted = false;
+    			dispose();
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$4.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$4($$self, $$props, $$invalidate) {
+    	let { $$slots: slots = {}, $$scope } = $$props;
+    	validate_slots('Button', slots, ['default']);
+    	let { btnType = 'default' } = $$props;
+    	let { onClick = () => null } = $$props;
+    	const writable_props = ['btnType', 'onClick'];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<Button> was created with unknown prop '${key}'`);
+    	});
+
+    	$$self.$$set = $$props => {
+    		if ('btnType' in $$props) $$invalidate(0, btnType = $$props.btnType);
+    		if ('onClick' in $$props) $$invalidate(1, onClick = $$props.onClick);
+    		if ('$$scope' in $$props) $$invalidate(2, $$scope = $$props.$$scope);
+    	};
+
+    	$$self.$capture_state = () => ({ btnType, onClick });
+
+    	$$self.$inject_state = $$props => {
+    		if ('btnType' in $$props) $$invalidate(0, btnType = $$props.btnType);
+    		if ('onClick' in $$props) $$invalidate(1, onClick = $$props.onClick);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [btnType, onClick, $$scope, slots];
+    }
+
+    class Button extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+    		init(this, options, instance$4, create_fragment$4, safe_not_equal, { btnType: 0, onClick: 1 });
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "Button",
+    			options,
+    			id: create_fragment$4.name
+    		});
+    	}
+
+    	get btnType() {
+    		throw new Error("<Button>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set btnType(value) {
+    		throw new Error("<Button>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get onClick() {
+    		throw new Error("<Button>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set onClick(value) {
+    		throw new Error("<Button>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    /* node_modules/svelte-loading-spinners/Circle2.svelte generated by Svelte v3.59.2 */
+
+    const file$3 = "node_modules/svelte-loading-spinners/Circle2.svelte";
+
+    function create_fragment$3(ctx) {
+    	let div;
+
+    	const block = {
+    		c: function create() {
+    			div = element("div");
+    			attr_dev(div, "class", "circle svelte-1w4sjib");
+    			set_style(div, "--size", /*size*/ ctx[0] + /*unit*/ ctx[1]);
+    			set_style(div, "--colorInner", /*colorInner*/ ctx[5]);
+    			set_style(div, "--colorCenter", /*colorCenter*/ ctx[4]);
+    			set_style(div, "--colorOuter", /*colorOuter*/ ctx[3]);
+    			set_style(div, "--durationInner", /*durationInner*/ ctx[7]);
+    			set_style(div, "--durationCenter", /*durationCenter*/ ctx[8]);
+    			set_style(div, "--durationOuter", /*durationOuter*/ ctx[6]);
+    			toggle_class(div, "pause-animation", /*pause*/ ctx[2]);
+    			add_location(div, file$3, 12, 0, 418);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div, anchor);
+    		},
+    		p: function update(ctx, [dirty]) {
+    			if (dirty & /*size, unit*/ 3) {
+    				set_style(div, "--size", /*size*/ ctx[0] + /*unit*/ ctx[1]);
+    			}
+
+    			if (dirty & /*colorInner*/ 32) {
+    				set_style(div, "--colorInner", /*colorInner*/ ctx[5]);
+    			}
+
+    			if (dirty & /*colorCenter*/ 16) {
+    				set_style(div, "--colorCenter", /*colorCenter*/ ctx[4]);
+    			}
+
+    			if (dirty & /*colorOuter*/ 8) {
+    				set_style(div, "--colorOuter", /*colorOuter*/ ctx[3]);
+    			}
+
+    			if (dirty & /*durationInner*/ 128) {
+    				set_style(div, "--durationInner", /*durationInner*/ ctx[7]);
+    			}
+
+    			if (dirty & /*durationCenter*/ 256) {
+    				set_style(div, "--durationCenter", /*durationCenter*/ ctx[8]);
+    			}
+
+    			if (dirty & /*durationOuter*/ 64) {
+    				set_style(div, "--durationOuter", /*durationOuter*/ ctx[6]);
+    			}
+
+    			if (dirty & /*pause*/ 4) {
+    				toggle_class(div, "pause-animation", /*pause*/ ctx[2]);
+    			}
+    		},
+    		i: noop,
+    		o: noop,
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$3.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$3($$self, $$props, $$invalidate) {
+    	let { $$slots: slots = {}, $$scope } = $$props;
+    	validate_slots('Circle2', slots, []);
+    	let { size = '60' } = $$props;
+    	let { unit = 'px' } = $$props;
+    	let { pause = false } = $$props;
+    	let { colorOuter = '#FF3E00' } = $$props;
+    	let { colorCenter = '#40B3FF' } = $$props;
+    	let { colorInner = '#676778' } = $$props;
+    	let { durationMultiplier = 1 } = $$props;
+    	let { durationOuter = `${durationMultiplier * 2}s` } = $$props;
+    	let { durationInner = `${durationMultiplier * 1.5}s` } = $$props;
+    	let { durationCenter = `${durationMultiplier * 3}s` } = $$props;
+
+    	const writable_props = [
+    		'size',
+    		'unit',
+    		'pause',
+    		'colorOuter',
+    		'colorCenter',
+    		'colorInner',
+    		'durationMultiplier',
+    		'durationOuter',
+    		'durationInner',
+    		'durationCenter'
+    	];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<Circle2> was created with unknown prop '${key}'`);
+    	});
+
+    	$$self.$$set = $$props => {
+    		if ('size' in $$props) $$invalidate(0, size = $$props.size);
+    		if ('unit' in $$props) $$invalidate(1, unit = $$props.unit);
+    		if ('pause' in $$props) $$invalidate(2, pause = $$props.pause);
+    		if ('colorOuter' in $$props) $$invalidate(3, colorOuter = $$props.colorOuter);
+    		if ('colorCenter' in $$props) $$invalidate(4, colorCenter = $$props.colorCenter);
+    		if ('colorInner' in $$props) $$invalidate(5, colorInner = $$props.colorInner);
+    		if ('durationMultiplier' in $$props) $$invalidate(9, durationMultiplier = $$props.durationMultiplier);
+    		if ('durationOuter' in $$props) $$invalidate(6, durationOuter = $$props.durationOuter);
+    		if ('durationInner' in $$props) $$invalidate(7, durationInner = $$props.durationInner);
+    		if ('durationCenter' in $$props) $$invalidate(8, durationCenter = $$props.durationCenter);
+    	};
+
+    	$$self.$capture_state = () => ({
+    		size,
+    		unit,
+    		pause,
+    		colorOuter,
+    		colorCenter,
+    		colorInner,
+    		durationMultiplier,
+    		durationOuter,
+    		durationInner,
+    		durationCenter
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ('size' in $$props) $$invalidate(0, size = $$props.size);
+    		if ('unit' in $$props) $$invalidate(1, unit = $$props.unit);
+    		if ('pause' in $$props) $$invalidate(2, pause = $$props.pause);
+    		if ('colorOuter' in $$props) $$invalidate(3, colorOuter = $$props.colorOuter);
+    		if ('colorCenter' in $$props) $$invalidate(4, colorCenter = $$props.colorCenter);
+    		if ('colorInner' in $$props) $$invalidate(5, colorInner = $$props.colorInner);
+    		if ('durationMultiplier' in $$props) $$invalidate(9, durationMultiplier = $$props.durationMultiplier);
+    		if ('durationOuter' in $$props) $$invalidate(6, durationOuter = $$props.durationOuter);
+    		if ('durationInner' in $$props) $$invalidate(7, durationInner = $$props.durationInner);
+    		if ('durationCenter' in $$props) $$invalidate(8, durationCenter = $$props.durationCenter);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [
+    		size,
+    		unit,
+    		pause,
+    		colorOuter,
+    		colorCenter,
+    		colorInner,
+    		durationOuter,
+    		durationInner,
+    		durationCenter,
+    		durationMultiplier
+    	];
+    }
+
+    class Circle2 extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+
+    		init(this, options, instance$3, create_fragment$3, safe_not_equal, {
+    			size: 0,
+    			unit: 1,
+    			pause: 2,
+    			colorOuter: 3,
+    			colorCenter: 4,
+    			colorInner: 5,
+    			durationMultiplier: 9,
+    			durationOuter: 6,
+    			durationInner: 7,
+    			durationCenter: 8
+    		});
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "Circle2",
+    			options,
+    			id: create_fragment$3.name
+    		});
+    	}
+
+    	get size() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set size(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get unit() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set unit(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get pause() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set pause(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get colorOuter() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set colorOuter(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get colorCenter() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set colorCenter(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get colorInner() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set colorInner(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get durationMultiplier() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set durationMultiplier(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get durationOuter() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set durationOuter(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get durationInner() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set durationInner(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get durationCenter() {
+    		throw new Error("<Circle2>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set durationCenter(value) {
+    		throw new Error("<Circle2>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    /* src/components/Loading.svelte generated by Svelte v3.59.2 */
+    const file$2 = "src/components/Loading.svelte";
+
+    function create_fragment$2(ctx) {
+    	let div;
+    	let circle2;
+    	let current;
+    	circle2 = new Circle2({ $$inline: true });
+
+    	const block = {
+    		c: function create() {
+    			div = element("div");
+    			create_component(circle2.$$.fragment);
+    			attr_dev(div, "class", "loading-container svelte-je3f7r");
+    			add_location(div, file$2, 4, 0, 73);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div, anchor);
+    			mount_component(circle2, div, null);
+    			current = true;
+    		},
+    		p: noop,
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(circle2.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(circle2.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div);
+    			destroy_component(circle2);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$2.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$2($$self, $$props, $$invalidate) {
+    	let { $$slots: slots = {}, $$scope } = $$props;
+    	validate_slots('Loading', slots, []);
+    	const writable_props = [];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<Loading> was created with unknown prop '${key}'`);
+    	});
+
+    	$$self.$capture_state = () => ({ Circle2 });
+    	return [];
+    }
+
+    class Loading extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+    		init(this, options, instance$2, create_fragment$2, safe_not_equal, {});
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "Loading",
     			options,
     			id: create_fragment$2.name
     		});
@@ -16457,15 +17018,19 @@ var app = (function () {
         return { storedLocations, storedActiveLocation };
     }
     function addLocation(currLocs, newLoc) {
-        const latIdx = currLocs.findIndex(cl => cl.lat === newLoc.lat);
-        const lonIdx = currLocs.findIndex(cl => cl.lon === newLoc.lon);
-        if (latIdx < 0 || lonIdx < 0) {
-            console.log('add marker');
-            const newLocs = [...currLocs, newLoc];
-            setStorage(LOCATIONS_KEY, newLocs);
-            return newLocs;
+        let newLocs = null;
+        if (currLocs) {
+            const latIdx = currLocs.findIndex(cl => cl.lat === newLoc.lat);
+            const lonIdx = currLocs.findIndex(cl => cl.lon === newLoc.lon);
+            if (latIdx >= 0 && lonIdx >= 0)
+                return newLocs;
+            newLocs = [...currLocs, newLoc];
         }
-        return null;
+        else {
+            newLocs = [newLoc];
+        }
+        setStorage(LOCATIONS_KEY, newLocs);
+        return newLocs;
     }
     function removeLocation(currLocs, removeLoc) {
         console.log(currLocs, removeLoc);
@@ -16480,19 +17045,287 @@ var app = (function () {
         return newLoc;
     }
 
-    /* src/components/map/Map.svelte generated by Svelte v3.59.2 */
+    /* src/components/locationPicker/LocationPicker.svelte generated by Svelte v3.59.2 */
 
-    const { Map: Map_1, console: console_1 } = globals;
+    const { Object: Object_1, console: console_1 } = globals;
 
-    const file$1 = "src/components/map/Map.svelte";
+    const file$1 = "src/components/locationPicker/LocationPicker.svelte";
 
     function get_each_context(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[7] = list[i];
+    	child_ctx[16] = list[i];
     	return child_ctx;
     }
 
-    // (95:4) {:else}
+    // (144:1) <Button onClick={toggleModal}>
+    function create_default_slot_4(ctx) {
+    	let t;
+
+    	const block = {
+    		c: function create() {
+    			t = text("Change Location");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, t, anchor);
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(t);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_default_slot_4.name,
+    		type: "slot",
+    		source: "(144:1) <Button onClick={toggleModal}>",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (147:0) {#if modalOpen}
+    function create_if_block(ctx) {
+    	let div1;
+    	let div0;
+    	let leaflet;
+    	let t0;
+    	let t1;
+    	let t2;
+    	let current;
+    	let mounted;
+    	let dispose;
+
+    	leaflet = new Leaflet({
+    			props: {
+    				locations: /*$locations*/ ctx[3],
+    				bounds: /*$locations*/ ctx[3]
+    				? undefined
+    				: [[37.20, -82.70], [47.60, -66.90]],
+    				handleMapClick: /*handleMapClick*/ ctx[6],
+    				$$slots: { default: [create_default_slot] },
+    				$$scope: { ctx }
+    			},
+    			$$inline: true
+    		});
+
+    	let if_block0 = /*modalLocked*/ ctx[2] && /*modalOpen*/ ctx[1] && create_if_block_3(ctx);
+    	let if_block1 = /*badMessage*/ ctx[0] && create_if_block_2(ctx);
+    	let if_block2 = /*$isLoadingLocation*/ ctx[5] && create_if_block_1(ctx);
+
+    	const block = {
+    		c: function create() {
+    			div1 = element("div");
+    			div0 = element("div");
+    			create_component(leaflet.$$.fragment);
+    			t0 = space();
+    			if (if_block0) if_block0.c();
+    			t1 = space();
+    			if (if_block1) if_block1.c();
+    			t2 = space();
+    			if (if_block2) if_block2.c();
+    			attr_dev(div0, "class", "location-picker-modal-content svelte-1vfo49p");
+    			add_location(div0, file$1, 148, 2, 5009);
+    			attr_dev(div1, "class", "location-picker-modal svelte-1vfo49p");
+    			add_location(div1, file$1, 147, 1, 4917);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div1, anchor);
+    			append_dev(div1, div0);
+    			mount_component(leaflet, div0, null);
+    			append_dev(div0, t0);
+    			if (if_block0) if_block0.m(div0, null);
+    			append_dev(div0, t1);
+    			if (if_block1) if_block1.m(div0, null);
+    			append_dev(div0, t2);
+    			if (if_block2) if_block2.m(div0, null);
+    			current = true;
+
+    			if (!mounted) {
+    				dispose = [
+    					listen_dev(div0, "click", stop_propagation(/*click_handler*/ ctx[11]), false, false, true, false),
+    					listen_dev(div0, "keydown", /*handleEsc*/ ctx[10], false, false, false, false),
+    					listen_dev(div1, "click", /*click_handler_1*/ ctx[14], false, false, false, false),
+    					listen_dev(div1, "keydown", /*handleEsc*/ ctx[10], false, false, false, false)
+    				];
+
+    				mounted = true;
+    			}
+    		},
+    		p: function update(ctx, dirty) {
+    			const leaflet_changes = {};
+    			if (dirty & /*$locations*/ 8) leaflet_changes.locations = /*$locations*/ ctx[3];
+
+    			if (dirty & /*$locations*/ 8) leaflet_changes.bounds = /*$locations*/ ctx[3]
+    			? undefined
+    			: [[37.20, -82.70], [47.60, -66.90]];
+
+    			if (dirty & /*$$scope, $locations, $activeLocation*/ 524312) {
+    				leaflet_changes.$$scope = { dirty, ctx };
+    			}
+
+    			leaflet.$set(leaflet_changes);
+
+    			if (/*modalLocked*/ ctx[2] && /*modalOpen*/ ctx[1]) {
+    				if (if_block0) ; else {
+    					if_block0 = create_if_block_3(ctx);
+    					if_block0.c();
+    					if_block0.m(div0, t1);
+    				}
+    			} else if (if_block0) {
+    				if_block0.d(1);
+    				if_block0 = null;
+    			}
+
+    			if (/*badMessage*/ ctx[0]) {
+    				if (if_block1) {
+    					if_block1.p(ctx, dirty);
+    				} else {
+    					if_block1 = create_if_block_2(ctx);
+    					if_block1.c();
+    					if_block1.m(div0, t2);
+    				}
+    			} else if (if_block1) {
+    				if_block1.d(1);
+    				if_block1 = null;
+    			}
+
+    			if (/*$isLoadingLocation*/ ctx[5]) {
+    				if (if_block2) {
+    					if (dirty & /*$isLoadingLocation*/ 32) {
+    						transition_in(if_block2, 1);
+    					}
+    				} else {
+    					if_block2 = create_if_block_1(ctx);
+    					if_block2.c();
+    					transition_in(if_block2, 1);
+    					if_block2.m(div0, null);
+    				}
+    			} else if (if_block2) {
+    				group_outros();
+
+    				transition_out(if_block2, 1, 1, () => {
+    					if_block2 = null;
+    				});
+
+    				check_outros();
+    			}
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(leaflet.$$.fragment, local);
+    			transition_in(if_block2);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(leaflet.$$.fragment, local);
+    			transition_out(if_block2);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div1);
+    			destroy_component(leaflet);
+    			if (if_block0) if_block0.d();
+    			if (if_block1) if_block1.d();
+    			if (if_block2) if_block2.d();
+    			mounted = false;
+    			run_all(dispose);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block.name,
+    		type: "if",
+    		source: "(147:0) {#if modalOpen}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (155:4) {#if $locations}
+    function create_if_block_4(ctx) {
+    	let each_blocks = [];
+    	let each_1_lookup = new Map();
+    	let each_1_anchor;
+    	let current;
+    	let each_value = /*$locations*/ ctx[3];
+    	validate_each_argument(each_value);
+    	const get_key = ctx => /*loc*/ ctx[16].id;
+    	validate_each_keys(ctx, each_value, get_each_context, get_key);
+
+    	for (let i = 0; i < each_value.length; i += 1) {
+    		let child_ctx = get_each_context(ctx, each_value, i);
+    		let key = get_key(child_ctx);
+    		each_1_lookup.set(key, each_blocks[i] = create_each_block(key, child_ctx));
+    	}
+
+    	const block = {
+    		c: function create() {
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				each_blocks[i].c();
+    			}
+
+    			each_1_anchor = empty();
+    		},
+    		m: function mount(target, anchor) {
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				if (each_blocks[i]) {
+    					each_blocks[i].m(target, anchor);
+    				}
+    			}
+
+    			insert_dev(target, each_1_anchor, anchor);
+    			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty & /*$locations, handleMarkerClick, handleMarkerRemove, $activeLocation*/ 408) {
+    				each_value = /*$locations*/ ctx[3];
+    				validate_each_argument(each_value);
+    				group_outros();
+    				validate_each_keys(ctx, each_value, get_each_context, get_key);
+    				each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value, each_1_lookup, each_1_anchor.parentNode, outro_and_destroy_block, create_each_block, each_1_anchor, get_each_context);
+    				check_outros();
+    			}
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+
+    			for (let i = 0; i < each_value.length; i += 1) {
+    				transition_in(each_blocks[i]);
+    			}
+
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				transition_out(each_blocks[i]);
+    			}
+
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				each_blocks[i].d(detaching);
+    			}
+
+    			if (detaching) detach_dev(each_1_anchor);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_4.name,
+    		type: "if",
+    		source: "(155:4) {#if $locations}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (167:7) {:else}
     function create_else_block(ctx) {
     	let bluepin;
     	let t;
@@ -16523,7 +17356,7 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const tooltip_changes = {};
 
-    			if (dirty & /*$$scope, $locations*/ 1025) {
+    			if (dirty & /*$$scope, $locations*/ 524296) {
     				tooltip_changes.$$scope = { dirty, ctx };
     			}
 
@@ -16551,15 +17384,15 @@ var app = (function () {
     		block,
     		id: create_else_block.name,
     		type: "else",
-    		source: "(95:4) {:else}",
+    		source: "(167:7) {:else}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (92:4) {#if loc.id === $activeLocation.id}
-    function create_if_block(ctx) {
+    // (164:7) {#if loc.id === $activeLocation.id}
+    function create_if_block_5(ctx) {
     	let redpin;
     	let t;
     	let tooltip;
@@ -16590,7 +17423,7 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const tooltip_changes = {};
 
-    			if (dirty & /*$$scope, $locations*/ 1025) {
+    			if (dirty & /*$$scope, $locations*/ 524296) {
     				tooltip_changes.$$scope = { dirty, ctx };
     			}
 
@@ -16616,18 +17449,18 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block.name,
+    		id: create_if_block_5.name,
     		type: "if",
-    		source: "(92:4) {#if loc.id === $activeLocation.id}",
+    		source: "(164:7) {#if loc.id === $activeLocation.id}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (97:5) <Tooltip>
+    // (169:8) <Tooltip>
     function create_default_slot_3(ctx) {
-    	let t_value = /*loc*/ ctx[7].fullAddress + "";
+    	let t_value = /*loc*/ ctx[16].fullAddress + "";
     	let t;
 
     	const block = {
@@ -16638,7 +17471,7 @@ var app = (function () {
     			insert_dev(target, t, anchor);
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*$locations*/ 1 && t_value !== (t_value = /*loc*/ ctx[7].fullAddress + "")) set_data_dev(t, t_value);
+    			if (dirty & /*$locations*/ 8 && t_value !== (t_value = /*loc*/ ctx[16].fullAddress + "")) set_data_dev(t, t_value);
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(t);
@@ -16649,16 +17482,16 @@ var app = (function () {
     		block,
     		id: create_default_slot_3.name,
     		type: "slot",
-    		source: "(97:5) <Tooltip>",
+    		source: "(169:8) <Tooltip>",
     		ctx
     	});
 
     	return block;
     }
 
-    // (94:5) <Tooltip isActive={true}>
+    // (166:8) <Tooltip isActive={true}>
     function create_default_slot_2(ctx) {
-    	let t_value = /*loc*/ ctx[7].fullAddress + "";
+    	let t_value = /*loc*/ ctx[16].fullAddress + "";
     	let t;
 
     	const block = {
@@ -16669,7 +17502,7 @@ var app = (function () {
     			insert_dev(target, t, anchor);
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*$locations*/ 1 && t_value !== (t_value = /*loc*/ ctx[7].fullAddress + "")) set_data_dev(t, t_value);
+    			if (dirty & /*$locations*/ 8 && t_value !== (t_value = /*loc*/ ctx[16].fullAddress + "")) set_data_dev(t, t_value);
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(t);
@@ -16680,24 +17513,24 @@ var app = (function () {
     		block,
     		id: create_default_slot_2.name,
     		type: "slot",
-    		source: "(94:5) <Tooltip isActive={true}>",
+    		source: "(166:8) <Tooltip isActive={true}>",
     		ctx
     	});
 
     	return block;
     }
 
-    // (85:3) <Marker     latLng={[loc.lat, loc.lon]}     width={15}     height={30}     handleMarkerClick={() => handleMarkerClick(loc)}     handleMarkerContextMenu={() => handleMarkerRemove(loc)}    >
+    // (157:6) <Marker        latLng={[loc.lat, loc.lon]}        width={15}        height={30}        handleMarkerClick={() => handleMarkerClick(loc)}        handleMarkerContextMenu={() => handleMarkerRemove(loc)}       >
     function create_default_slot_1(ctx) {
     	let current_block_type_index;
     	let if_block;
     	let t;
     	let current;
-    	const if_block_creators = [create_if_block, create_else_block];
+    	const if_block_creators = [create_if_block_5, create_else_block];
     	const if_blocks = [];
 
     	function select_block_type(ctx, dirty) {
-    		if (/*loc*/ ctx[7].id === /*$activeLocation*/ ctx[1].id) return 0;
+    		if (/*loc*/ ctx[16].id === /*$activeLocation*/ ctx[4].id) return 0;
     		return 1;
     	}
 
@@ -16760,30 +17593,30 @@ var app = (function () {
     		block,
     		id: create_default_slot_1.name,
     		type: "slot",
-    		source: "(85:3) <Marker     latLng={[loc.lat, loc.lon]}     width={15}     height={30}     handleMarkerClick={() => handleMarkerClick(loc)}     handleMarkerContextMenu={() => handleMarkerRemove(loc)}    >",
+    		source: "(157:6) <Marker        latLng={[loc.lat, loc.lon]}        width={15}        height={30}        handleMarkerClick={() => handleMarkerClick(loc)}        handleMarkerContextMenu={() => handleMarkerRemove(loc)}       >",
     		ctx
     	});
 
     	return block;
     }
 
-    // (84:2) {#each $locations as loc (loc.id)}
+    // (156:5) {#each $locations as loc (loc.id)}
     function create_each_block(key_1, ctx) {
     	let first;
     	let marker;
     	let current;
 
     	function func() {
-    		return /*func*/ ctx[5](/*loc*/ ctx[7]);
+    		return /*func*/ ctx[12](/*loc*/ ctx[16]);
     	}
 
     	function func_1() {
-    		return /*func_1*/ ctx[6](/*loc*/ ctx[7]);
+    		return /*func_1*/ ctx[13](/*loc*/ ctx[16]);
     	}
 
     	marker = new Marker({
     			props: {
-    				latLng: [/*loc*/ ctx[7].lat, /*loc*/ ctx[7].lon],
+    				latLng: [/*loc*/ ctx[16].lat, /*loc*/ ctx[16].lon],
     				width: 15,
     				height: 30,
     				handleMarkerClick: func,
@@ -16810,11 +17643,11 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
     			const marker_changes = {};
-    			if (dirty & /*$locations*/ 1) marker_changes.latLng = [/*loc*/ ctx[7].lat, /*loc*/ ctx[7].lon];
-    			if (dirty & /*$locations*/ 1) marker_changes.handleMarkerClick = func;
-    			if (dirty & /*$locations*/ 1) marker_changes.handleMarkerContextMenu = func_1;
+    			if (dirty & /*$locations*/ 8) marker_changes.latLng = [/*loc*/ ctx[16].lat, /*loc*/ ctx[16].lon];
+    			if (dirty & /*$locations*/ 8) marker_changes.handleMarkerClick = func;
+    			if (dirty & /*$locations*/ 8) marker_changes.handleMarkerContextMenu = func_1;
 
-    			if (dirty & /*$$scope, $locations, $activeLocation*/ 1027) {
+    			if (dirty & /*$$scope, $locations, $activeLocation*/ 524312) {
     				marker_changes.$$scope = { dirty, ctx };
     			}
 
@@ -16839,80 +17672,65 @@ var app = (function () {
     		block,
     		id: create_each_block.name,
     		type: "each",
-    		source: "(84:2) {#each $locations as loc (loc.id)}",
+    		source: "(156:5) {#each $locations as loc (loc.id)}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (80:1) <Leaflet   locations={$locations}   {handleMapClick}  >
+    // (150:3) <Leaflet     locations={$locations}     bounds={$locations ? undefined : [[37.20, -82.70], [47.60, -66.90]]}     {handleMapClick}    >
     function create_default_slot(ctx) {
-    	let each_blocks = [];
-    	let each_1_lookup = new Map_1();
-    	let each_1_anchor;
+    	let if_block_anchor;
     	let current;
-    	let each_value = /*$locations*/ ctx[0];
-    	validate_each_argument(each_value);
-    	const get_key = ctx => /*loc*/ ctx[7].id;
-    	validate_each_keys(ctx, each_value, get_each_context, get_key);
-
-    	for (let i = 0; i < each_value.length; i += 1) {
-    		let child_ctx = get_each_context(ctx, each_value, i);
-    		let key = get_key(child_ctx);
-    		each_1_lookup.set(key, each_blocks[i] = create_each_block(key, child_ctx));
-    	}
+    	let if_block = /*$locations*/ ctx[3] && create_if_block_4(ctx);
 
     	const block = {
     		c: function create() {
-    			for (let i = 0; i < each_blocks.length; i += 1) {
-    				each_blocks[i].c();
-    			}
-
-    			each_1_anchor = empty();
+    			if (if_block) if_block.c();
+    			if_block_anchor = empty();
     		},
     		m: function mount(target, anchor) {
-    			for (let i = 0; i < each_blocks.length; i += 1) {
-    				if (each_blocks[i]) {
-    					each_blocks[i].m(target, anchor);
-    				}
-    			}
-
-    			insert_dev(target, each_1_anchor, anchor);
+    			if (if_block) if_block.m(target, anchor);
+    			insert_dev(target, if_block_anchor, anchor);
     			current = true;
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*$locations, handleMarkerClick, handleMarkerRemove, $activeLocation*/ 27) {
-    				each_value = /*$locations*/ ctx[0];
-    				validate_each_argument(each_value);
+    			if (/*$locations*/ ctx[3]) {
+    				if (if_block) {
+    					if_block.p(ctx, dirty);
+
+    					if (dirty & /*$locations*/ 8) {
+    						transition_in(if_block, 1);
+    					}
+    				} else {
+    					if_block = create_if_block_4(ctx);
+    					if_block.c();
+    					transition_in(if_block, 1);
+    					if_block.m(if_block_anchor.parentNode, if_block_anchor);
+    				}
+    			} else if (if_block) {
     				group_outros();
-    				validate_each_keys(ctx, each_value, get_each_context, get_key);
-    				each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value, each_1_lookup, each_1_anchor.parentNode, outro_and_destroy_block, create_each_block, each_1_anchor, get_each_context);
+
+    				transition_out(if_block, 1, 1, () => {
+    					if_block = null;
+    				});
+
     				check_outros();
     			}
     		},
     		i: function intro(local) {
     			if (current) return;
-
-    			for (let i = 0; i < each_value.length; i += 1) {
-    				transition_in(each_blocks[i]);
-    			}
-
+    			transition_in(if_block);
     			current = true;
     		},
     		o: function outro(local) {
-    			for (let i = 0; i < each_blocks.length; i += 1) {
-    				transition_out(each_blocks[i]);
-    			}
-
+    			transition_out(if_block);
     			current = false;
     		},
     		d: function destroy(detaching) {
-    			for (let i = 0; i < each_blocks.length; i += 1) {
-    				each_blocks[i].d(detaching);
-    			}
-
-    			if (detaching) detach_dev(each_1_anchor);
+    			if (if_block) if_block.d(detaching);
+    			if (detaching) detach_dev(if_block_anchor);
     		}
     	};
 
@@ -16920,7 +17738,119 @@ var app = (function () {
     		block,
     		id: create_default_slot.name,
     		type: "slot",
-    		source: "(80:1) <Leaflet   locations={$locations}   {handleMapClick}  >",
+    		source: "(150:3) <Leaflet     locations={$locations}     bounds={$locations ? undefined : [[37.20, -82.70], [47.60, -66.90]]}     {handleMapClick}    >",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (175:3) {#if modalLocked && modalOpen}
+    function create_if_block_3(ctx) {
+    	let div;
+    	let p;
+
+    	const block = {
+    		c: function create() {
+    			div = element("div");
+    			p = element("p");
+    			p.textContent = "Select your high tunnel location to get started";
+    			add_location(p, file$1, 175, 25, 5841);
+    			attr_dev(div, "class", "message svelte-1vfo49p");
+    			add_location(div, file$1, 175, 4, 5820);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div, anchor);
+    			append_dev(div, p);
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_3.name,
+    		type: "if",
+    		source: "(175:3) {#if modalLocked && modalOpen}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (178:3) {#if badMessage}
+    function create_if_block_2(ctx) {
+    	let div;
+    	let p;
+    	let t;
+
+    	const block = {
+    		c: function create() {
+    			div = element("div");
+    			p = element("p");
+    			t = text(/*badMessage*/ ctx[0]);
+    			add_location(p, file$1, 178, 25, 5956);
+    			attr_dev(div, "class", "message svelte-1vfo49p");
+    			add_location(div, file$1, 178, 4, 5935);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div, anchor);
+    			append_dev(div, p);
+    			append_dev(p, t);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty & /*badMessage*/ 1) set_data_dev(t, /*badMessage*/ ctx[0]);
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_2.name,
+    		type: "if",
+    		source: "(178:3) {#if badMessage}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (181:3) {#if $isLoadingLocation}
+    function create_if_block_1(ctx) {
+    	let loading;
+    	let current;
+    	loading = new Loading({ $$inline: true });
+
+    	const block = {
+    		c: function create() {
+    			create_component(loading.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(loading, target, anchor);
+    			current = true;
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(loading.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(loading.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(loading, detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_1.name,
+    		type: "if",
+    		source: "(181:3) {#if $isLoadingLocation}",
     		ctx
     	});
 
@@ -16929,56 +17859,105 @@ var app = (function () {
 
     function create_fragment$1(ctx) {
     	let div;
-    	let leaflet;
+    	let h3;
+    	let t0_value = /*$activeLocation*/ ctx[4]?.shortAddress + "";
+    	let t0;
+    	let t1;
+    	let button;
+    	let t2;
+    	let if_block_anchor;
     	let current;
 
-    	leaflet = new Leaflet({
+    	button = new Button({
     			props: {
-    				locations: /*$locations*/ ctx[0],
-    				handleMapClick: /*handleMapClick*/ ctx[2],
-    				$$slots: { default: [create_default_slot] },
+    				onClick: /*toggleModal*/ ctx[9],
+    				$$slots: { default: [create_default_slot_4] },
     				$$scope: { ctx }
     			},
     			$$inline: true
     		});
 
+    	let if_block = /*modalOpen*/ ctx[1] && create_if_block(ctx);
+
     	const block = {
     		c: function create() {
     			div = element("div");
-    			create_component(leaflet.$$.fragment);
-    			attr_dev(div, "class", "w-full h-screen svelte-1exu5di");
-    			add_location(div, file$1, 78, 0, 3091);
+    			h3 = element("h3");
+    			t0 = text(t0_value);
+    			t1 = space();
+    			create_component(button.$$.fragment);
+    			t2 = space();
+    			if (if_block) if_block.c();
+    			if_block_anchor = empty();
+    			attr_dev(h3, "class", "location-picker-address svelte-1vfo49p");
+    			add_location(h3, file$1, 142, 1, 4763);
+    			attr_dev(div, "class", "location-picker-display svelte-1vfo49p");
+    			add_location(div, file$1, 141, 0, 4724);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
-    			mount_component(leaflet, div, null);
+    			append_dev(div, h3);
+    			append_dev(h3, t0);
+    			append_dev(div, t1);
+    			mount_component(button, div, null);
+    			insert_dev(target, t2, anchor);
+    			if (if_block) if_block.m(target, anchor);
+    			insert_dev(target, if_block_anchor, anchor);
     			current = true;
     		},
     		p: function update(ctx, [dirty]) {
-    			const leaflet_changes = {};
-    			if (dirty & /*$locations*/ 1) leaflet_changes.locations = /*$locations*/ ctx[0];
+    			if ((!current || dirty & /*$activeLocation*/ 16) && t0_value !== (t0_value = /*$activeLocation*/ ctx[4]?.shortAddress + "")) set_data_dev(t0, t0_value);
+    			const button_changes = {};
 
-    			if (dirty & /*$$scope, $locations, $activeLocation*/ 1027) {
-    				leaflet_changes.$$scope = { dirty, ctx };
+    			if (dirty & /*$$scope*/ 524288) {
+    				button_changes.$$scope = { dirty, ctx };
     			}
 
-    			leaflet.$set(leaflet_changes);
+    			button.$set(button_changes);
+
+    			if (/*modalOpen*/ ctx[1]) {
+    				if (if_block) {
+    					if_block.p(ctx, dirty);
+
+    					if (dirty & /*modalOpen*/ 2) {
+    						transition_in(if_block, 1);
+    					}
+    				} else {
+    					if_block = create_if_block(ctx);
+    					if_block.c();
+    					transition_in(if_block, 1);
+    					if_block.m(if_block_anchor.parentNode, if_block_anchor);
+    				}
+    			} else if (if_block) {
+    				group_outros();
+
+    				transition_out(if_block, 1, 1, () => {
+    					if_block = null;
+    				});
+
+    				check_outros();
+    			}
     		},
     		i: function intro(local) {
     			if (current) return;
-    			transition_in(leaflet.$$.fragment, local);
+    			transition_in(button.$$.fragment, local);
+    			transition_in(if_block);
     			current = true;
     		},
     		o: function outro(local) {
-    			transition_out(leaflet.$$.fragment, local);
+    			transition_out(button.$$.fragment, local);
+    			transition_out(if_block);
     			current = false;
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(div);
-    			destroy_component(leaflet);
+    			destroy_component(button);
+    			if (detaching) detach_dev(t2);
+    			if (if_block) if_block.d(detaching);
+    			if (detaching) detach_dev(if_block_anchor);
     		}
     	};
 
@@ -16996,12 +17975,15 @@ var app = (function () {
     function instance$1($$self, $$props, $$invalidate) {
     	let $locations;
     	let $activeLocation;
+    	let $isLoadingLocation;
     	validate_store(locations, 'locations');
-    	component_subscribe($$self, locations, $$value => $$invalidate(0, $locations = $$value));
+    	component_subscribe($$self, locations, $$value => $$invalidate(3, $locations = $$value));
     	validate_store(activeLocation, 'activeLocation');
-    	component_subscribe($$self, activeLocation, $$value => $$invalidate(1, $activeLocation = $$value));
+    	component_subscribe($$self, activeLocation, $$value => $$invalidate(4, $activeLocation = $$value));
+    	validate_store(isLoadingLocation, 'isLoadingLocation');
+    	component_subscribe($$self, isLoadingLocation, $$value => $$invalidate(5, $isLoadingLocation = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
-    	validate_slots('Map', slots, []);
+    	validate_slots('LocationPicker', slots, []);
 
     	onMount(() => {
     		const { storedLocations, storedActiveLocation } = loadLocations();
@@ -17009,32 +17991,73 @@ var app = (function () {
     		if (storedLocations && storedActiveLocation) {
     			set_store_value(locations, $locations = storedLocations, $locations);
     			set_store_value(activeLocation, $activeLocation = storedActiveLocation, $activeLocation);
+    		} else {
+    			$$invalidate(1, modalOpen = true);
+    			$$invalidate(2, modalLocked = true);
     		}
     	});
 
+    	const ALLOWED_STATES = {
+    		'Maine': 'ME',
+    		'Vermont': 'VT',
+    		'New Hampshire': 'NH',
+    		'Rhode Island': 'RI',
+    		'Massachusetts': 'MA',
+    		'Connecticut': 'CT',
+    		'New York': 'NY',
+    		'Pennsylvania': 'PA',
+    		'New Jersey': 'NJ',
+    		'Delaware': 'DE',
+    		'Maryland': 'MD',
+    		'West Virginia': 'WV'
+    	};
+
     	function handleMapClick(e) {
+    		console.log('here');
+    		set_store_value(isLoadingLocation, $isLoadingLocation = true, $isLoadingLocation);
+
     		fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${e.latlng.lat}&lon=${e.latlng.lng}&zoom=18&addressdetails=1`).then(response => {
     			if (!response.ok) throw 'Reverse Geocode Error'; else return response.json();
     		}).then(responseJson => {
-    			if (responseJson.address.state === 'New York') {
-    				const houseNum = responseJson.address.house_number;
-    				const roadName = responseJson.address.road;
-    				console.log(responseJson);
-    				let townCityVillage;
+    			console.log(responseJson);
 
-    				try {
-    					townCityVillage = responseJson.display_name.split(' of ')[1].split(', ')[0];
-    				} catch(_a) {
-    					const pieces = responseJson.display_name.split('County')[0].split(', ');
-    					pieces.pop();
-    					townCityVillage = pieces.pop();
+    			if (Object.keys(ALLOWED_STATES).includes(responseJson.address.state)) {
+    				const { house_number, road, state, county } = responseJson.address;
+    				let shortAddress;
+
+    				if (house_number) {
+    					shortAddress = `${house_number} ${road}`;
+    				} else if (road) {
+    					shortAddress = road;
+    				} else {
+    					shortAddress = 'Unknown Address';
     				}
 
-    				const shortAddress = houseNum ? `${houseNum} ${roadName}` : roadName;
+    				let municipality;
+
+    				try {
+    					municipality = responseJson.display_name.split(' of ')[1].split(', ')[0];
+    				} catch(_a) {
+    					try {
+    						const pieces = responseJson.display_name.split('County')[0].split(', ');
+    						pieces.pop();
+    						municipality = pieces.pop();
+    					} catch(_b) {
+    						municipality = county ? county : null;
+    					}
+    				}
+
+    				let fullAddress;
+
+    				if (municipality) {
+    					fullAddress = `${shortAddress}, ${municipality}, ${ALLOWED_STATES[responseJson.address.state]}`;
+    				} else {
+    					fullAddress = `${shortAddress}, ${ALLOWED_STATES[responseJson.address.state]}`;
+    				}
 
     				const newLoc = {
     					shortAddress,
-    					fullAddress: `${shortAddress}, ${townCityVillage}, NY`,
+    					fullAddress,
     					lat: parseFloat(responseJson.lat),
     					lon: parseFloat(responseJson.lon),
     					id: String(new Date().getTime())
@@ -17045,14 +18068,28 @@ var app = (function () {
     				if (newLocs) {
     					set_store_value(locations, $locations = newLocs, $locations);
     					set_store_value(activeLocation, $activeLocation = updateActiveLocation(newLoc), $activeLocation);
+    					toggleModal(true);
+    					$$invalidate(0, badMessage = '');
+    				} else {
+    					$$invalidate(0, badMessage = 'You already have a pin at that location. Please click the pin to select it again.');
     				}
+    			} else {
+    				$$invalidate(0, badMessage = 'Selected location was out of bounds. Please select a location within the outlined states.');
     			}
-    		}).catch(e => console.log(e));
+
+    			set_store_value(isLoadingLocation, $isLoadingLocation = false, $isLoadingLocation);
+    		}).catch(e => {
+    			console.log(e);
+    			$$invalidate(0, badMessage = 'An error occurred finding that location. Please make sure you are selecting land within one of the outlined states.');
+    			set_store_value(isLoadingLocation, $isLoadingLocation = false, $isLoadingLocation);
+    		});
     	}
 
     	function handleMarkerClick(changeToLoc) {
     		if (changeToLoc.id !== $activeLocation.id) {
     			set_store_value(activeLocation, $activeLocation = updateActiveLocation(changeToLoc), $activeLocation);
+    			toggleModal(true);
+    			$$invalidate(0, badMessage = '');
     		}
     	}
 
@@ -17060,68 +18097,115 @@ var app = (function () {
     		if (removeLoc.id !== $activeLocation.id) {
     			const newLocs = removeLocation($locations, removeLoc);
     			set_store_value(locations, $locations = newLocs, $locations);
+    			$$invalidate(0, badMessage = '');
     		}
     	}
 
+    	function toggleModal(unlockModal = false) {
+    		if (unlockModal) {
+    			$$invalidate(2, modalLocked = false);
+    		}
+
+    		if (!modalLocked) {
+    			$$invalidate(1, modalOpen = !modalOpen);
+    		}
+    	}
+
+    	function handleEsc(e) {
+    		if (e.keyCode === 27 && modalOpen) {
+    			toggleModal();
+    		}
+    	}
+
+    	let badMessage = '';
+    	let modalOpen = false;
+    	let modalLocked = false;
     	const writable_props = [];
 
-    	Object.keys($$props).forEach(key => {
-    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1.warn(`<Map> was created with unknown prop '${key}'`);
+    	Object_1.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1.warn(`<LocationPicker> was created with unknown prop '${key}'`);
     	});
+
+    	function click_handler(event) {
+    		bubble.call(this, $$self, event);
+    	}
 
     	const func = loc => handleMarkerClick(loc);
     	const func_1 = loc => handleMarkerRemove(loc);
+    	const click_handler_1 = () => toggleModal();
 
     	$$self.$capture_state = () => ({
     		activeLocation,
     		locations,
+    		isLoadingLocation,
     		onMount,
     		Leaflet,
     		Marker,
     		Tooltip,
     		RedPin: Pin_red,
     		BluePin: Pin_blue,
+    		Button,
+    		Loading,
     		loadLocations,
     		addLocation,
     		updateActiveLocation,
     		removeLocation,
+    		ALLOWED_STATES,
     		handleMapClick,
     		handleMarkerClick,
     		handleMarkerRemove,
-    		$locations,
-    		$activeLocation
-    	});
-
-    	$$self.$$.update = () => {
-    		if ($$self.$$.dirty & /*$locations*/ 1) {
-    			console.log($locations);
-    		}
-    	};
-
-    	return [
+    		toggleModal,
+    		handleEsc,
+    		badMessage,
+    		modalOpen,
+    		modalLocked,
     		$locations,
     		$activeLocation,
+    		$isLoadingLocation
+    	});
+
+    	$$self.$inject_state = $$props => {
+    		if ('badMessage' in $$props) $$invalidate(0, badMessage = $$props.badMessage);
+    		if ('modalOpen' in $$props) $$invalidate(1, modalOpen = $$props.modalOpen);
+    		if ('modalLocked' in $$props) $$invalidate(2, modalLocked = $$props.modalLocked);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [
+    		badMessage,
+    		modalOpen,
+    		modalLocked,
+    		$locations,
+    		$activeLocation,
+    		$isLoadingLocation,
     		handleMapClick,
     		handleMarkerClick,
     		handleMarkerRemove,
+    		toggleModal,
+    		handleEsc,
+    		click_handler,
     		func,
-    		func_1
+    		func_1,
+    		click_handler_1
     	];
     }
 
-    let Map$1 = class Map extends SvelteComponentDev {
+    class LocationPicker extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
     		init(this, options, instance$1, create_fragment$1, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
-    			tagName: "Map",
+    			tagName: "LocationPicker",
     			options,
     			id: create_fragment$1.name
     		});
     	}
-    };
+    }
 
     /* src/App.svelte generated by Svelte v3.59.2 */
     const file = "src/App.svelte";
@@ -17130,9 +18214,9 @@ var app = (function () {
     	let main;
     	let h1;
     	let t1;
-    	let map;
+    	let locationpicker;
     	let current;
-    	map = new Map$1({ $$inline: true });
+    	locationpicker = new LocationPicker({ $$inline: true });
 
     	const block = {
     		c: function create() {
@@ -17140,11 +18224,11 @@ var app = (function () {
     			h1 = element("h1");
     			h1.textContent = "High Tunnel Tomatoes";
     			t1 = space();
-    			create_component(map.$$.fragment);
+    			create_component(locationpicker.$$.fragment);
     			attr_dev(h1, "class", "svelte-1tky8bj");
-    			add_location(h1, file, 4, 1, 84);
+    			add_location(h1, file, 4, 1, 117);
     			attr_dev(main, "class", "svelte-1tky8bj");
-    			add_location(main, file, 3, 0, 76);
+    			add_location(main, file, 3, 0, 109);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -17153,22 +18237,22 @@ var app = (function () {
     			insert_dev(target, main, anchor);
     			append_dev(main, h1);
     			append_dev(main, t1);
-    			mount_component(map, main, null);
+    			mount_component(locationpicker, main, null);
     			current = true;
     		},
     		p: noop,
     		i: function intro(local) {
     			if (current) return;
-    			transition_in(map.$$.fragment, local);
+    			transition_in(locationpicker.$$.fragment, local);
     			current = true;
     		},
     		o: function outro(local) {
-    			transition_out(map.$$.fragment, local);
+    			transition_out(locationpicker.$$.fragment, local);
     			current = false;
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(main);
-    			destroy_component(map);
+    			destroy_component(locationpicker);
     		}
     	};
 
@@ -17192,7 +18276,7 @@ var app = (function () {
     		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<App> was created with unknown prop '${key}'`);
     	});
 
-    	$$self.$capture_state = () => ({ Map: Map$1 });
+    	$$self.$capture_state = () => ({ LocationPicker });
     	return [];
     }
 

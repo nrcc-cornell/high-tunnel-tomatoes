@@ -19,15 +19,17 @@ function loadLocations() {
 }
 
 function addLocation(currLocs, newLoc) {
-  const latIdx = currLocs.findIndex(cl => cl.lat === newLoc.lat);
-  const lonIdx = currLocs.findIndex(cl => cl.lon === newLoc.lon);
-  if (latIdx < 0 || lonIdx < 0) {
-    console.log('add marker');
-    const newLocs = [...currLocs, newLoc];
-    setStorage(LOCATIONS_KEY, newLocs)
-    return newLocs;
+  let newLocs = null;
+  if (currLocs) {
+    const latIdx = currLocs.findIndex(cl => cl.lat === newLoc.lat);
+    const lonIdx = currLocs.findIndex(cl => cl.lon === newLoc.lon);
+    if (latIdx >= 0 && lonIdx >= 0) return newLocs;
+    newLocs = [...currLocs, newLoc];
+  } else {
+    newLocs = [newLoc];
   }
-  return null;
+  setStorage(LOCATIONS_KEY, newLocs)
+  return newLocs;
 }
 
 function removeLocation(currLocs, removeLoc) {

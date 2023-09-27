@@ -1,10 +1,10 @@
 <script lang="ts">
-	import Map from "./components/map/Map.svelte";
+	import LocationPicker from "./components/locationPicker/LocationPicker.svelte";
 </script>
 
 <main>
 	<h1>High Tunnel Tomatoes</h1>
-	<Map />
+	<LocationPicker />
 </main>
 
 <style>
