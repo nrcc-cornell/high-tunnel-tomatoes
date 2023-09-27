@@ -10,7 +10,7 @@
   import Button from "../Button.svelte";
 	import Loading from "../Loading.svelte";
 
-	import { loadLocations, addLocation, updateActiveLocation, removeLocation } from "./handleStorage";
+	import { loadLocations, addLocationToStorage, removeLocationFromStorage, updateActiveLocationInStorage } from "./handleStorage";
 	
 	onMount(() => {
 		const { storedLocations, storedActiveLocation } = loadLocations();
@@ -22,6 +22,34 @@
 			modalLocked = true;
 		}
 	})
+
+	const isNum = (val) => new RegExp('^[0-9]+$').test(val);
+	function parseAddress(address) {
+		const pieces = address.split(', ');
+
+		let shortAddress;
+		if (isNum(pieces[0])) {
+			const houseNumber = pieces.shift();
+			const street = pieces.shift();
+			shortAddress = `${houseNumber} ${street}`;
+		} else {
+			shortAddress = pieces.shift();
+		}
+
+		const stateIdx = pieces.findIndex(p => Object.keys(ALLOWED_STATES).includes(p));
+		const muniPieces = pieces.slice(0,stateIdx);
+		let municipality;
+		if (muniPieces.length === 0) {
+			municipality = '';
+		} else if (muniPieces.length === 1) {
+			municipality = muniPieces[0];
+		} else {
+			municipality = muniPieces.find(m => m.includes(' of ') || m.includes('County')) || '';
+		}
+
+		const fullAddress = municipality ? `${shortAddress}, ${municipality}, ${pieces[stateIdx]}` : `${shortAddress}, ${pieces[stateIdx]}`;
+		return { shortAddress, fullAddress };
+	}
 
 	const ALLOWED_STATES = {
 		'Maine': 'ME',
@@ -37,69 +65,48 @@
 		'Maryland': 'MD',
 		'West Virginia': 'WV',
 	};
+
+	function handleAddLocation(addressStr, lat, lon) {
+		try {
+			const { shortAddress, fullAddress } = parseAddress(addressStr);
+			const newLoc = {
+				shortAddress,
+				fullAddress,
+				lat,
+				lon,
+				id: String(new Date().getTime())
+			};
+			const newLocs = addLocationToStorage($locations, newLoc);
+			if (newLocs) {
+				$locations = newLocs;
+				$activeLocation = updateActiveLocationInStorage(newLoc);
+				toggleModal(true);
+				badMessage = '';
+			} else {
+				badMessage = 'You already have a pin at that location. Please click the pin to select it again.';
+			}
+		} catch {
+			badMessage = 'An error occurred while getting the address for this location. Please try again or select a different location.'
+		}
+	}
+
 	function handleMapClick(e) {
-		console.log('here');
 		$isLoadingLocation = true;
-		fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${e.latlng.lat}&lon=${e.latlng.lng}&zoom=18&addressdetails=1`)
+		fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${e.latlng.lat}&lon=${e.latlng.lng}&zoom=18&addressdetails=1`, {
+			headers: {
+				'User-Agent': 'High Tunnel Tomatoes v0.1'
+			}
+		})
 			.then(response => { 
 				if (!response.ok) throw 'Reverse Geocode Error';
 				else return response.json();
 			})
 			.then(responseJson =>{
-				console.log(responseJson);
 				if (Object.keys(ALLOWED_STATES).includes(responseJson.address.state)) {
-					const { house_number, road, state, county } = responseJson.address;
-
-					let shortAddress;
-					if (house_number) {
-						shortAddress = `${house_number} ${road}`;
-					} else if (road) {
-						shortAddress = road;
-					} else {
-						shortAddress = 'Unknown Address';
-					}
-
-					let municipality;
-					try {
-						municipality = responseJson.display_name.split(' of ')[1].split(', ')[0];
-					} catch {
-						try {
-							const pieces = responseJson.display_name.split('County')[0].split(', ');
-							pieces.pop();
-							municipality = pieces.pop();
-						} catch {
-							municipality = county ? county : null;
-						}
-					}
-
-					let fullAddress;
-					if (municipality) {
-						fullAddress = `${shortAddress}, ${municipality}, ${ALLOWED_STATES[responseJson.address.state]}`;
-					} else {
-						fullAddress = `${shortAddress}, ${ALLOWED_STATES[responseJson.address.state]}`;
-					}
-
-					const newLoc = {
-						shortAddress,
-						fullAddress,
-						lat: parseFloat(responseJson.lat),
-						lon: parseFloat(responseJson.lon),
-						id: String(new Date().getTime())
-					};
-
-					const newLocs = addLocation($locations, newLoc);
-					if (newLocs) {
-						$locations = newLocs;
-						$activeLocation = updateActiveLocation(newLoc);
-						toggleModal(true);
-						badMessage = '';
-					} else {
-						badMessage = 'You already have a pin at that location. Please click the pin to select it again.';
-					}
+					handleAddLocation(responseJson.display_name, parseFloat(responseJson.lat), parseFloat(responseJson.lon));
 				} else {
 					badMessage = 'Selected location was out of bounds. Please select a location within the outlined states.';
 				}
-
 				$isLoadingLocation = false;
 			})
 			.catch((e) => {
@@ -109,9 +116,33 @@
 			});
 	}
 
+	async function handleSearch(event, inputEl, provider) {
+		$isLoadingLocation = true;
+		event.preventDefault();
+		try {
+			let results = await provider.search({ query: inputEl.value });
+			const result = results.find(({ label }) => {
+				let inBounds = false;
+				const stateList = Object.keys(ALLOWED_STATES);
+				for (let i = 0; i < stateList.length; i++) {
+					const state = stateList[i];
+					if (label.includes(state)) {
+						inBounds = true;
+						break;
+					}
+				}
+				return inBounds;
+			});
+			handleAddLocation(result.label, result.y, result.x);
+		} catch {
+			badMessage = 'Something went wrong while searching for that location. If this continues to be an issue please click on the map to select instead.';
+		}
+		$isLoadingLocation = false;
+	}
+
 	function handleMarkerClick(changeToLoc) {
 		if (changeToLoc.id !== $activeLocation.id) {
-			$activeLocation = updateActiveLocation(changeToLoc);
+			$activeLocation = updateActiveLocationInStorage(changeToLoc);
 			toggleModal(true);
 			badMessage = '';
 		}
@@ -119,7 +150,7 @@
 
 	function handleMarkerRemove(removeLoc) {
 		if (removeLoc.id !== $activeLocation.id) {
-			const newLocs = removeLocation($locations, removeLoc);
+			const newLocs = removeLocationFromStorage($locations, removeLoc);
 			$locations = newLocs;
 			badMessage = '';
 		}
@@ -158,6 +189,7 @@
 				locations={$locations}
 				bounds={$locations ? undefined : [[37.20, -82.70], [47.60, -66.90]]}
 				{handleMapClick}
+				{handleSearch}
 			>
 				{#if $locations}
 					{#each $locations as loc (loc.id)}

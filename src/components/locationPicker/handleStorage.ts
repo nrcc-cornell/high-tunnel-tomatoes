@@ -18,7 +18,7 @@ function loadLocations() {
   return { storedLocations, storedActiveLocation };
 }
 
-function addLocation(currLocs, newLoc) {
+function addLocationToStorage(currLocs, newLoc) {
   let newLocs = null;
   if (currLocs) {
     const latIdx = currLocs.findIndex(cl => cl.lat === newLoc.lat);
@@ -32,18 +32,15 @@ function addLocation(currLocs, newLoc) {
   return newLocs;
 }
 
-function removeLocation(currLocs, removeLoc) {
-  console.log(currLocs, removeLoc);
+function removeLocationFromStorage(currLocs, removeLoc) {
   const newLocs = currLocs.filter(cl => cl.lat !== removeLoc.lat || cl.lon !== removeLoc.lon);
-  console.log('here');
   setStorage(LOCATIONS_KEY, newLocs)
-  console.log(newLocs);
   return newLocs;
 }
 
-function updateActiveLocation(newLoc) {
+function updateActiveLocationInStorage(newLoc) {
   setStorage(ACTIVE_LOCATION_KEY, newLoc);
   return newLoc;
 }
 
-export { loadLocations, addLocation, removeLocation, updateActiveLocation };
+export { loadLocations, addLocationToStorage, removeLocationFromStorage, updateActiveLocationInStorage };

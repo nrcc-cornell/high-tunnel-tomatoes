@@ -15,7 +15,6 @@
 	const map = getMap();
 
 	setContext('layer', {
-		// L.Marker inherits from L.Layer
 		getLayer: () => leafMarker
 	});
 
