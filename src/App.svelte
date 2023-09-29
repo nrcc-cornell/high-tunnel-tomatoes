@@ -1,10 +1,16 @@
 <script lang="ts">
 	import LocationPicker from "./components/locationPicker/LocationPicker.svelte";
+  import ToolOptions from "./components/options/ToolOptions.svelte";
+	import { soilCharacteristics, waterData } from "./store/store";
+
+	$: console.log($soilCharacteristics);
+	$: console.log($waterData);
 </script>
 
 <main>
 	<h1>High Tunnel Tomatoes</h1>
 	<LocationPicker />
+	<ToolOptions />
 </main>
 
 <style>

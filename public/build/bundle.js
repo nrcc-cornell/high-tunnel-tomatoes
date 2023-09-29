@@ -706,6 +706,16 @@ var app = (function () {
 
     const subscriber_queue = [];
     /**
+     * Creates a `Readable` store that allows reading by subscription.
+     * @param value initial value
+     * @param {StartStopNotifier} [start]
+     */
+    function readable(value, start) {
+        return {
+            subscribe: writable(value, start).subscribe
+        };
+    }
+    /**
      * Create a `Writable` store that allows both updating and reading by subscription.
      * @param {*=}value initial value
      * @param {StartStopNotifier=} start
@@ -751,12 +761,265 @@ var app = (function () {
         }
         return { set, update, subscribe };
     }
+    function derived(stores, fn, initial_value) {
+        const single = !Array.isArray(stores);
+        const stores_array = single
+            ? [stores]
+            : stores;
+        const auto = fn.length < 2;
+        return readable(initial_value, (set) => {
+            let started = false;
+            const values = [];
+            let pending = 0;
+            let cleanup = noop;
+            const sync = () => {
+                if (pending) {
+                    return;
+                }
+                cleanup();
+                const result = fn(single ? values[0] : values, set);
+                if (auto) {
+                    set(result);
+                }
+                else {
+                    cleanup = is_function(result) ? result : noop;
+                }
+            };
+            const unsubscribers = stores_array.map((store, i) => subscribe(store, (value) => {
+                values[i] = value;
+                pending &= ~(1 << i);
+                if (started) {
+                    sync();
+                }
+            }, () => {
+                pending |= (1 << i);
+            }));
+            started = true;
+            sync();
+            return function stop() {
+                run_all(unsubscribers);
+                cleanup();
+                // We need to set this to false because callbacks can still happen despite having unsubscribed:
+                // Callbacks might already be placed in the queue which doesn't know it should no longer
+                // invoke this derived store.
+                started = false;
+            };
+        });
+    }
 
+    function asyncDerived (stores, callback, initial_value) {
+        let guard;
+        return derived(stores, ($stores, set) => {
+            const inner = guard = {};
+            set(initial_value);
+            Promise.resolve(callback($stores)).then(value => {
+                if (guard === inner) {
+                    set(value);
+                }
+            });
+        }, initial_value);
+    }
+
+    var SoilMoistureOptionLevel;
+    (function (SoilMoistureOptionLevel) {
+        SoilMoistureOptionLevel["LOW"] = "low";
+        SoilMoistureOptionLevel["MEDIUM"] = "medium";
+        SoilMoistureOptionLevel["HIGH"] = "high";
+    })(SoilMoistureOptionLevel || (SoilMoistureOptionLevel = {}));
+
+    function noNulls(value) {
+        return !(value.includes(null));
+    }
+    class SoilType {
+        constructor(name, typeData) {
+            this.columnDepthCm = 45;
+            this.name = name;
+            this.areaWeight = typeData.percent / 100;
+            const goodHorizons = typeData.horizons.filter(noNulls);
+            this.horizons = goodHorizons.map(h => {
+                const newH = [...h];
+                if (newH.length === 6) {
+                    newH.splice(4, 0, 1.3);
+                }
+                return newH;
+            });
+        }
+        calcHorizonDepth(horizon) {
+            const top = horizon[5];
+            const bottom = horizon[6] > this.columnDepthCm ? this.columnDepthCm : horizon[6];
+            return top >= this.columnDepthCm ? 0 : bottom - top;
+        }
+        calcHorizonWeightedValues(horizon, weight) {
+            return horizon.slice(0, 5).map(val => val * weight);
+        }
+        calcHorizonWeights() {
+            const { depthAccountedFor, depths } = this.horizons.reduce((acc, horizon) => {
+                const thisHorizonDepth = this.calcHorizonDepth(horizon);
+                acc.depthAccountedFor += thisHorizonDepth;
+                acc.depths.push(thisHorizonDepth);
+                return acc;
+            }, { depthAccountedFor: 0, depths: [] });
+            return depths.map(depth => depth / depthAccountedFor);
+        }
+        calcWeightedAvgs() {
+            const weights = this.calcHorizonWeights();
+            return this.horizons.reduce((acc, horizon, weightIndex) => {
+                const weightedValues = this.calcHorizonWeightedValues(horizon, weights[weightIndex]);
+                for (let i = 0; i < weightedValues.length; i++) {
+                    acc[i] += weightedValues[i];
+                }
+                return acc;
+            }, [0, 0, 0, 0, 0]);
+        }
+    }
+    const fetchSoilColumnDataViaPostRest = (lngLat) => {
+        const query = `SELECT claytotal_r, sandtotal_r, silttotal_r, om_r, dbovendry_r, dbthirdbar_r, hzdept_r, hzdepb_r, comppct_r, compname
+    FROM mapunit AS mu
+    LEFT OUTER JOIN component AS c ON mu.mukey = c.mukey
+    INNER JOIN chorizon AS ch ON c.cokey = ch.cokey
+    WHERE mu.mukey IN (SELECT * from SDA_Get_Mukey_from_intersection_with_WktWgs84('point (${lngLat.join(' ')})')) AND hzdept_r <= 45`;
+        return fetch('https://sdmdataaccess.sc.egov.usda.gov/tabular/post.rest', {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                format: 'JSON',
+                query: query,
+            }),
+        })
+            .then((res) => res.json())
+            .then((jData) => {
+            return jData.Table;
+        })
+            .catch((e) => {
+            console.error('Failed soil data: ', e);
+            return null;
+        });
+    };
+    const convertIntoSoilTypes = (soilColumnData) => {
+        const sortedByName = soilColumnData.reduce((acc, horizon) => {
+            if (!(horizon[9] in acc))
+                acc[horizon[9]] = { percent: parseInt(horizon[8]), horizons: [] };
+            let hasBD = false;
+            acc[horizon[9]].horizons.push(horizon.slice(0, 8).reduce((acc, val, i) => {
+                if (i <= 2 || i >= 6) {
+                    acc.push(val === null ? null : parseInt(val));
+                }
+                else if (i === 3) {
+                    acc.push(val === null ? null : parseFloat(val));
+                }
+                else if (!hasBD && val !== null) {
+                    hasBD = true;
+                    acc.push(parseFloat(val));
+                }
+                return acc;
+            }, []));
+            return acc;
+        }, {});
+        const areaSum = Object.keys(sortedByName).reduce((sum, name) => sum += sortedByName[name].percent, 0);
+        if (areaSum < 100) {
+            const unaccounted = 100 - areaSum;
+            const portion = unaccounted / Object.keys(sortedByName).length;
+            Object.keys(sortedByName).forEach(name => sortedByName[name].percent += portion);
+        }
+        return Object.keys(sortedByName).map(name => new SoilType(name, sortedByName[name]));
+    };
+    const calcAvgSoilComp = (soilTypes) => {
+        return soilTypes.reduce((acc, soilType) => {
+            const typeComposition = soilType.calcWeightedAvgs();
+            for (let i = 0; i < typeComposition.length; i++) {
+                acc[i] += typeComposition[i] * soilType.areaWeight;
+            }
+            return acc;
+        }, [0, 0, 0, 0, 0]);
+    };
+    const categorizeTexture = (clay, sand, silt) => {
+        let type = SoilMoistureOptionLevel.MEDIUM;
+        if (sand >= 50 && clay < 20) {
+            type = SoilMoistureOptionLevel.LOW;
+        }
+        else if (clay >= 36 || silt >= 50 || (clay >= 30 && sand < 45)) {
+            type = SoilMoistureOptionLevel.HIGH;
+        }
+        return type;
+    };
+    async function getSoilCharacteristics(activeLocation) {
+        if (!activeLocation)
+            return null;
+        const soilColumnData = await fetchSoilColumnDataViaPostRest([activeLocation.lon, activeLocation.lat]);
+        const soilTypes = convertIntoSoilTypes(soilColumnData);
+        const [avgClay, avgSand, avgSilt, avgOM, avgBD] = calcAvgSoilComp(soilTypes);
+        return {
+            waterCapacity: categorizeTexture(avgClay, avgSand, avgSilt),
+            composition: { clay: avgClay, sand: avgSand, silt: avgSilt },
+            organicMatter: avgOM,
+            bulkDensity: avgBD
+        };
+    }
+
+    async function fetchPrecip(lat, lon, eDate) {
+        const response = await fetch('https://grid2.rcc-acis.org/GridData', {
+            method: 'POST',
+            body: JSON.stringify({
+                loc: `${lon},${lat}`,
+                grid: 'nrcc-model',
+                sDate: `${eDate.slice(0, 4)}-03-01`,
+                eDate,
+                elems: [{ name: 'pcpn' }]
+            }),
+        });
+        if (!response.ok) {
+            throw new Error(response.statusText);
+        }
+        const results = (await response.json()).data;
+        while (results[results.length - 1].includes(-999)) {
+            results.pop();
+        }
+        return results;
+    }
+    async function fetchPETData(lat, lon, year) {
+        return fetch(`https://x6xfv2cdrl.execute-api.us-east-1.amazonaws.com/production/irrigation?lat=${lat}&lon=${lon}&year=${year}`)
+            .then(response => response.json())
+            .then(results => results.pet.map((pet, i) => ([year + '-' + results.dates_pet[i].split('/').join('-'), pet])))
+            .catch(() => null);
+    }
+    async function getWaterData(activeLocation, date) {
+        if (activeLocation) {
+            try {
+                const { lat, lon } = activeLocation;
+                const precip = await fetchPrecip(lat, lon, date);
+                const pet = await fetchPETData(lat, lon, date.slice(0, 4));
+                const results = { dates: [], pet: [], precip: [] };
+                const len = Math.min(pet.length, precip.length);
+                for (let i = 0; i < len; i++) {
+                    const [petDate, petValue] = pet[i];
+                    const [precipDate, precipValue] = precip[i];
+                    if (petDate === precipDate) {
+                        results.dates.push(petDate);
+                        results.pet.push(petValue);
+                        results.precip.push(precipValue);
+                    }
+                    else {
+                        throw 'PET and precip dates do not match';
+                    }
+                }
+                return results;
+            }
+            catch (e) {
+                console.error(e);
+            }
+        }
+        return null;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
     const activeLocation = writable(null);
     const locations = writable(null);
     const isLoadingLocation = writable(false);
-
-
+    const soilCharacteristics = asyncDerived(activeLocation, getSoilCharacteristics, null);
+    const waterData = asyncDerived(activeLocation, (loc) => getWaterData(loc, today), null);
     // Spinner colors:
     // #FF3E00 - red
     // #40B3FF - blue
@@ -15290,7 +15553,7 @@ var app = (function () {
         default: leafletSrc
     }, [leafletSrcExports]);
 
-    function e(){return e=Object.assign?Object.assign.bind():function(t){for(var e=1;e<arguments.length;e++){var r=arguments[e];for(var n in r)Object.prototype.hasOwnProperty.call(r,n)&&(t[n]=r[n]);}return t},e.apply(this,arguments)}function r(t,e){t.prototype=Object.create(e.prototype),t.prototype.constructor=t,n(t,e);}function n(t,e){return n=Object.setPrototypeOf?Object.setPrototypeOf.bind():function(t,e){return t.__proto__=e,t},n(t,e)}function o(){if("undefined"==typeof Reflect||!Reflect.construct)return !1;if(Reflect.construct.sham)return !1;if("function"==typeof Proxy)return !0;try{return Boolean.prototype.valueOf.call(Reflect.construct(Boolean,[],function(){})),!0}catch(t){return !1}}function i(t,e,r){return i=o()?Reflect.construct.bind():function(t,e,r){var o=[null];o.push.apply(o,e);var i=new(Function.bind.apply(t,o));return r&&n(i,r.prototype),i},i.apply(null,arguments)}function s(t,e,r,n){void 0===e&&(e=""),void 0===n&&(n={});var o=document.createElement(t);return e&&(o.className=e),Object.keys(n).forEach(function(t){if("function"==typeof n[t]){var e=0===t.indexOf("on")?t.substr(2).toLowerCase():t;o.addEventListener(e,n[t]);}else "html"===t?o.innerHTML=n[t]:"text"===t?o.innerText=n[t]:o.setAttribute(t,n[t]);}),r&&r.appendChild(o),o}function a(t){t.preventDefault(),t.stopPropagation();}var l=function(){return [].slice.call(arguments).filter(Boolean).join(" ").trim()};function c(t,e){t&&t.classList&&(Array.isArray(e)?e:[e]).forEach(function(e){t.classList.contains(e)||t.classList.add(e);});}function u(t,e){t&&t.classList&&(Array.isArray(e)?e:[e]).forEach(function(e){t.classList.contains(e)&&t.classList.remove(e);});}var h,p=13,d=40,f=38,m=[p,27,d,f,37,39],v=/*#__PURE__*/function(){function t(t){var e=this,r=t.handleSubmit,n=t.searchLabel,o=t.classNames,i=void 0===o?{}:o;this.container=void 0,this.form=void 0,this.input=void 0,this.handleSubmit=void 0,this.hasError=!1,this.container=s("div",l("geosearch",i.container)),this.form=s("form",["",i.form].join(" "),this.container,{autocomplete:"none",onClick:a,onDblClick:a,touchStart:a,touchEnd:a}),this.input=s("input",["glass",i.input].join(" "),this.form,{type:"text",placeholder:n||"search",onInput:this.onInput,onKeyUp:function(t){return e.onKeyUp(t)},onKeyPress:function(t){return e.onKeyPress(t)},onFocus:this.onFocus,onBlur:this.onBlur,onClick:function(){e.input.focus(),e.input.dispatchEvent(new Event("focus"));}}),this.handleSubmit=r;}var e=t.prototype;return e.onFocus=function(){c(this.form,"active");},e.onBlur=function(){u(this.form,"active");},e.onSubmit=function(t){try{var e=this;return a(t),u(r=e.container,"error"),c(r,"pending"),Promise.resolve(e.handleSubmit({query:e.input.value})).then(function(){u(e.container,"pending");})}catch(t){return Promise.reject(t)}var r;},e.onInput=function(){this.hasError&&(u(this.container,"error"),this.hasError=!1);},e.onKeyUp=function(t){27===t.keyCode&&(u(this.container,["pending","active"]),this.input.value="",document.body.focus(),document.body.blur());},e.onKeyPress=function(t){t.keyCode===p&&this.onSubmit(t);},e.setQuery=function(t){this.input.value=t;},t}(),g=/*#__PURE__*/function(){function t(t){var e=this,r=t.handleClick,n=t.classNames,o=void 0===n?{}:n,i=t.notFoundMessage;this.handleClick=void 0,this.selected=-1,this.results=[],this.container=void 0,this.resultItem=void 0,this.notFoundMessage=void 0,this.onClick=function(t){if("function"==typeof e.handleClick){var r=t.target;if(r&&e.container.contains(r)&&r.hasAttribute("data-key")){var n=Number(r.getAttribute("data-key"));e.clear(),e.handleClick({result:e.results[n]});}}},this.handleClick=r,this.notFoundMessage=i?s("div",l(o.notfound),void 0,{html:i}):void 0,this.container=s("div",l("results",o.resultlist)),this.container.addEventListener("click",this.onClick,!0),this.resultItem=s("div",l(o.item));}var e=t.prototype;return e.render=function(t,e){var r=this;void 0===t&&(t=[]),this.clear(),t.forEach(function(t,n){var o=r.resultItem.cloneNode(!0);o.setAttribute("data-key",""+n),o.innerHTML=e({result:t}),r.container.appendChild(o);}),t.length>0?(c(this.container.parentElement,"open"),c(this.container,"active")):this.notFoundMessage&&(this.container.appendChild(this.notFoundMessage),c(this.container.parentElement,"open")),this.results=t;},e.select=function(t){return Array.from(this.container.children).forEach(function(e,r){return r===t?c(e,"active"):u(e,"active")}),this.selected=t,this.results[t]},e.count=function(){return this.results?this.results.length:0},e.clear=function(){for(this.selected=-1;this.container.lastChild;)this.container.removeChild(this.container.lastChild);u(this.container.parentElement,"open"),u(this.container,"active");},t}(),y={position:"topleft",style:"button",showMarker:!0,showPopup:!1,popupFormat:function(t){return ""+t.result.label},resultFormat:function(t){return ""+t.result.label},marker:{icon:t&&leafletSrcExports.Icon?new leafletSrcExports.Icon.Default:void 0,draggable:!1},maxMarkers:1,maxSuggestions:5,retainZoomLevel:!1,animateZoom:!0,searchLabel:"Enter address",clearSearchLabel:"Clear search",notFoundMessage:"",messageHideDelay:3e3,zoomLevel:18,classNames:{container:"leaflet-bar leaflet-control leaflet-control-geosearch",button:"leaflet-bar-part leaflet-bar-part-single",resetButton:"reset",msgbox:"leaflet-bar message",form:"",input:"",resultlist:"",item:"",notfound:"leaflet-bar-notfound"},autoComplete:!0,autoCompleteDelay:250,autoClose:!1,keepResult:!1,updateMap:!0},b="Leaflet must be loaded before instantiating the GeoSearch control",E={options:e({},y),classNames:e({},y.classNames),initialize:function(r){var n,o,i,a,l=this;if(!t)throw new Error(b);if(!r.provider)throw new Error("Provider is missing from options");this.options=e({},y,r),this.classNames=e({},this.classNames,r.classNames),this.markers=new leafletSrcExports.FeatureGroup,this.classNames.container+=" leaflet-geosearch-"+this.options.style,this.searchElement=new v({searchLabel:this.options.searchLabel,classNames:{container:this.classNames.container,form:this.classNames.form,input:this.classNames.input},handleSubmit:function(t){return l.onSubmit(t)}}),this.button=s("a",this.classNames.button,this.searchElement.container,{title:this.options.searchLabel,href:"#",onClick:function(t){return l.onClick(t)}}),leafletSrcExports.DomEvent.disableClickPropagation(this.button),this.resetButton=s("button",this.classNames.resetButton,this.searchElement.form,{text:"×","aria-label":this.options.clearSearchLabel,onClick:function(){""===l.searchElement.input.value?l.close():l.clearResults(null,!0);}}),leafletSrcExports.DomEvent.disableClickPropagation(this.resetButton),this.options.autoComplete&&(this.resultList=new g({handleClick:function(t){var e=t.result;l.searchElement.input.value=e.label,l.onSubmit({query:e.label,data:e});},classNames:{resultlist:this.classNames.resultlist,item:this.classNames.item,notfound:this.classNames.notfound},notFoundMessage:this.options.notFoundMessage}),this.searchElement.form.appendChild(this.resultList.container),this.searchElement.input.addEventListener("keyup",(n=function(t){return l.autoSearch(t)},void 0===(o=this.options.autoCompleteDelay)&&(o=250),void 0===i&&(i=!1),function(){var t=[].slice.call(arguments);a&&clearTimeout(a),a=setTimeout(function(){a=null,i||n.apply(void 0,t);},o),i&&!a&&n.apply(void 0,t);}),!0),this.searchElement.input.addEventListener("keydown",function(t){return l.selectResult(t)},!0),this.searchElement.input.addEventListener("keydown",function(t){return l.clearResults(t,!0)},!0)),this.searchElement.form.addEventListener("click",function(t){t.preventDefault();},!1);},onAdd:function(e){var r=this.options,n=r.showMarker,o=r.style;if(this.map=e,n&&this.markers.addTo(e),"bar"===o){var i=e.getContainer().querySelector(".leaflet-control-container");this.container=s("div","leaflet-control-geosearch leaflet-geosearch-bar"),this.container.appendChild(this.searchElement.form),i.appendChild(this.container);}return leafletSrcExports.DomEvent.disableClickPropagation(this.searchElement.form),this.searchElement.container},onRemove:function(){var t;return null==(t=this.container)||t.remove(),this},open:function(){var t=this.searchElement,e=t.input;c(t.container,"active"),e.focus();},close:function(){u(this.searchElement.container,"active"),this.clearResults();},onClick:function(t){t.preventDefault(),t.stopPropagation(),this.searchElement.container.classList.contains("active")?this.close():this.open();},selectResult:function(t){if(-1!==[p,d,f].indexOf(t.keyCode))if(t.preventDefault(),t.keyCode!==p){var e=this.resultList.count()-1;if(!(e<0)){var r=this.resultList.selected,n=t.keyCode===d?r+1:r-1,o=this.resultList.select(n<0?e:n>e?0:n);this.searchElement.input.value=o.label;}}else {var i=this.resultList.select(this.resultList.selected);this.onSubmit({query:this.searchElement.input.value,data:i});}},clearResults:function(t,e){if(void 0===e&&(e=!1),!t||27===t.keyCode){var r=this.options,n=r.autoComplete;!e&&r.keepResult||(this.searchElement.input.value="",this.markers.clearLayers()),n&&this.resultList.clear();}},autoSearch:function(t){try{var e=this;if(m.indexOf(t.keyCode)>-1)return Promise.resolve();var r=t.target.value,n=e.options.provider,o=function(){if(r.length)return Promise.resolve(n.search({query:r})).then(function(t){t=t.slice(0,e.options.maxSuggestions),e.resultList.render(t,e.options.resultFormat);});e.resultList.clear();}();return Promise.resolve(o&&o.then?o.then(function(){}):void 0)}catch(t){return Promise.reject(t)}},onSubmit:function(t){try{var e=this;return Promise.resolve(e.options.provider.search(t)).then(function(r){r&&r.length>0&&e.showResult(r[0],t);})}catch(t){return Promise.reject(t)}},showResult:function(t,e){var r=this.options,n=r.autoClose,o=r.updateMap,i=this.markers.getLayers();i.length>=this.options.maxMarkers&&this.markers.removeLayer(i[0]);var s=this.addMarker(t,e);o&&this.centerMap(t),this.map.fireEvent("geosearch/showlocation",{location:t,marker:s}),n&&this.closeResults();},closeResults:function(){var t=this.searchElement.container;t.classList.contains("active")&&u(t,"active"),this.clearResults();},addMarker:function(e,r){var n=this,o=this.options,i=o.marker,s=o.showPopup,a=o.popupFormat,l=new leafletSrcExports.Marker([e.y,e.x],i),c=e.label;return "function"==typeof a&&(c=a({query:r,result:e})),l.bindPopup(c),this.markers.addLayer(l),s&&l.openPopup(),i.draggable&&l.on("dragend",function(t){n.map.fireEvent("geosearch/marker/dragend",{location:l.getLatLng(),event:t});}),l},centerMap:function(e){var r=this.options,n=r.retainZoomLevel,o=r.animateZoom,i=e.bounds?new leafletSrcExports.LatLngBounds(e.bounds):new leafletSrcExports.LatLng(e.y,e.x).toBounds(10),s=i.isValid()?i:this.markers.getBounds();!n&&i.isValid()&&!e.bounds||n||!i.isValid()?this.map.setView(s.getCenter(),this.getZoom(),{animate:o}):this.map.fitBounds(s,{animate:o});},getZoom:function(){var t=this.options,e=t.zoomLevel;return t.retainZoomLevel?this.map.getZoom():e}};function w(){if(!t)throw new Error(b);var e=leafletSrcExports.Control.extend(E);return i(e,[].slice.call(arguments))}!function(t){t[t.SEARCH=0]="SEARCH",t[t.REVERSE=1]="REVERSE";}(h||(h={}));var x,k=/*#__PURE__*/function(){function t(t){void 0===t&&(t={}),this.options=void 0,this.options=t;}var r=t.prototype;return r.getParamString=function(t){void 0===t&&(t={});var r=e({},this.options.params,t);return Object.keys(r).map(function(t){return encodeURIComponent(t)+"="+encodeURIComponent(r[t])}).join("&")},r.getUrl=function(t,e){return t+"?"+this.getParamString(e)},r.search=function(t){try{var e=this,r=e.endpoint({query:t.query,type:h.SEARCH});return Promise.resolve(fetch(r)).then(function(t){return Promise.resolve(t.json()).then(function(t){return e.parse({data:t})})})}catch(t){return Promise.reject(t)}},t}();!function(t){t[t.INITIALIZED=0]="INITIALIZED",t[t.LOADING=1]="LOADING",t[t.SUCCESS=2]="SUCCESS",t[t.FAILURE=3]="FAILURE";}(x||(x={}));var O=/*#__PURE__*/function(t){function e(e){var r;void 0===e&&(e={}),(r=t.call(this,e)||this).searchUrl=void 0,r.reverseUrl=void 0;var n="https://nominatim.openstreetmap.org";return r.searchUrl=e.searchUrl||n+"/search",r.reverseUrl=e.reverseUrl||n+"/reverse",r}r(e,t);var n=e.prototype;return n.endpoint=function(t){var e=t.query,r=t.type,n="string"==typeof e?{q:e}:e;return n.format="json",this.getUrl(r===h.REVERSE?this.reverseUrl:this.searchUrl,n)},n.parse=function(t){return (Array.isArray(t.data)?t.data:[t.data]).map(function(t){return {x:Number(t.lon),y:Number(t.lat),label:t.display_name,bounds:[[parseFloat(t.boundingbox[0]),parseFloat(t.boundingbox[2])],[parseFloat(t.boundingbox[1]),parseFloat(t.boundingbox[3])]],raw:t}})},e}(k);
+    function e(){return e=Object.assign?Object.assign.bind():function(t){for(var e=1;e<arguments.length;e++){var r=arguments[e];for(var n in r)Object.prototype.hasOwnProperty.call(r,n)&&(t[n]=r[n]);}return t},e.apply(this,arguments)}function r(t,e){t.prototype=Object.create(e.prototype),t.prototype.constructor=t,n(t,e);}function n(t,e){return n=Object.setPrototypeOf?Object.setPrototypeOf.bind():function(t,e){return t.__proto__=e,t},n(t,e)}function s(t,e,r,n){void 0===e&&(e=""),void 0===n&&(n={});var o=document.createElement(t);return e&&(o.className=e),Object.keys(n).forEach(function(t){if("function"==typeof n[t]){var e=0===t.indexOf("on")?t.substr(2).toLowerCase():t;o.addEventListener(e,n[t]);}else "html"===t?o.innerHTML=n[t]:"text"===t?o.innerText=n[t]:o.setAttribute(t,n[t]);}),r&&r.appendChild(o),o}function a(t){t.preventDefault(),t.stopPropagation();}var l=function(){return [].slice.call(arguments).filter(Boolean).join(" ").trim()};function c(t,e){t&&t.classList&&(Array.isArray(e)?e:[e]).forEach(function(e){t.classList.contains(e)||t.classList.add(e);});}function u(t,e){t&&t.classList&&(Array.isArray(e)?e:[e]).forEach(function(e){t.classList.contains(e)&&t.classList.remove(e);});}var h,p=13,d=40,f=38,m=[p,27,d,f,37,39],v=/*#__PURE__*/function(){function t(t){var e=this,r=t.handleSubmit,n=t.searchLabel,o=t.classNames,i=void 0===o?{}:o;this.container=void 0,this.form=void 0,this.input=void 0,this.handleSubmit=void 0,this.hasError=!1,this.container=s("div",l("geosearch",i.container)),this.form=s("form",["",i.form].join(" "),this.container,{autocomplete:"none",onClick:a,onDblClick:a,touchStart:a,touchEnd:a}),this.input=s("input",["glass",i.input].join(" "),this.form,{type:"text",placeholder:n||"search",onInput:this.onInput,onKeyUp:function(t){return e.onKeyUp(t)},onKeyPress:function(t){return e.onKeyPress(t)},onFocus:this.onFocus,onBlur:this.onBlur,onClick:function(){e.input.focus(),e.input.dispatchEvent(new Event("focus"));}}),this.handleSubmit=r;}var e=t.prototype;return e.onFocus=function(){c(this.form,"active");},e.onBlur=function(){u(this.form,"active");},e.onSubmit=function(t){try{var e=this;return a(t),u(r=e.container,"error"),c(r,"pending"),Promise.resolve(e.handleSubmit({query:e.input.value})).then(function(){u(e.container,"pending");})}catch(t){return Promise.reject(t)}var r;},e.onInput=function(){this.hasError&&(u(this.container,"error"),this.hasError=!1);},e.onKeyUp=function(t){27===t.keyCode&&(u(this.container,["pending","active"]),this.input.value="",document.body.focus(),document.body.blur());},e.onKeyPress=function(t){t.keyCode===p&&this.onSubmit(t);},e.setQuery=function(t){this.input.value=t;},t}(),g=/*#__PURE__*/function(){function t(t){var e=this,r=t.handleClick,n=t.classNames,o=void 0===n?{}:n,i=t.notFoundMessage;this.handleClick=void 0,this.selected=-1,this.results=[],this.container=void 0,this.resultItem=void 0,this.notFoundMessage=void 0,this.onClick=function(t){if("function"==typeof e.handleClick){var r=t.target;if(r&&e.container.contains(r)&&r.hasAttribute("data-key")){var n=Number(r.getAttribute("data-key"));e.clear(),e.handleClick({result:e.results[n]});}}},this.handleClick=r,this.notFoundMessage=i?s("div",l(o.notfound),void 0,{html:i}):void 0,this.container=s("div",l("results",o.resultlist)),this.container.addEventListener("click",this.onClick,!0),this.resultItem=s("div",l(o.item));}var e=t.prototype;return e.render=function(t,e){var r=this;void 0===t&&(t=[]),this.clear(),t.forEach(function(t,n){var o=r.resultItem.cloneNode(!0);o.setAttribute("data-key",""+n),o.innerHTML=e({result:t}),r.container.appendChild(o);}),t.length>0?(c(this.container.parentElement,"open"),c(this.container,"active")):this.notFoundMessage&&(this.container.appendChild(this.notFoundMessage),c(this.container.parentElement,"open")),this.results=t;},e.select=function(t){return Array.from(this.container.children).forEach(function(e,r){return r===t?c(e,"active"):u(e,"active")}),this.selected=t,this.results[t]},e.count=function(){return this.results?this.results.length:0},e.clear=function(){for(this.selected=-1;this.container.lastChild;)this.container.removeChild(this.container.lastChild);u(this.container.parentElement,"open"),u(this.container,"active");},t}(),y={position:"topleft",style:"button",showMarker:!0,showPopup:!1,popupFormat:function(t){return ""+t.result.label},resultFormat:function(t){return ""+t.result.label},marker:{icon:t&&leafletSrcExports.Icon?new leafletSrcExports.Icon.Default:void 0,draggable:!1},maxMarkers:1,maxSuggestions:5,retainZoomLevel:!1,animateZoom:!0,searchLabel:"Enter address",clearSearchLabel:"Clear search",notFoundMessage:"",messageHideDelay:3e3,zoomLevel:18,classNames:{container:"leaflet-bar leaflet-control leaflet-control-geosearch",button:"leaflet-bar-part leaflet-bar-part-single",resetButton:"reset",msgbox:"leaflet-bar message",form:"",input:"",resultlist:"",item:"",notfound:"leaflet-bar-notfound"},autoComplete:!0,autoCompleteDelay:250,autoClose:!1,keepResult:!1,updateMap:!0},b="Leaflet must be loaded before instantiating the GeoSearch control";({options:e({},y),classNames:e({},y.classNames),initialize:function(r){var n,o,i,a,l=this;if(!t)throw new Error(b);if(!r.provider)throw new Error("Provider is missing from options");this.options=e({},y,r),this.classNames=e({},this.classNames,r.classNames),this.markers=new leafletSrcExports.FeatureGroup,this.classNames.container+=" leaflet-geosearch-"+this.options.style,this.searchElement=new v({searchLabel:this.options.searchLabel,classNames:{container:this.classNames.container,form:this.classNames.form,input:this.classNames.input},handleSubmit:function(t){return l.onSubmit(t)}}),this.button=s("a",this.classNames.button,this.searchElement.container,{title:this.options.searchLabel,href:"#",onClick:function(t){return l.onClick(t)}}),leafletSrcExports.DomEvent.disableClickPropagation(this.button),this.resetButton=s("button",this.classNames.resetButton,this.searchElement.form,{text:"×","aria-label":this.options.clearSearchLabel,onClick:function(){""===l.searchElement.input.value?l.close():l.clearResults(null,!0);}}),leafletSrcExports.DomEvent.disableClickPropagation(this.resetButton),this.options.autoComplete&&(this.resultList=new g({handleClick:function(t){var e=t.result;l.searchElement.input.value=e.label,l.onSubmit({query:e.label,data:e});},classNames:{resultlist:this.classNames.resultlist,item:this.classNames.item,notfound:this.classNames.notfound},notFoundMessage:this.options.notFoundMessage}),this.searchElement.form.appendChild(this.resultList.container),this.searchElement.input.addEventListener("keyup",(n=function(t){return l.autoSearch(t)},void 0===(o=this.options.autoCompleteDelay)&&(o=250),void 0===i&&(i=!1),function(){var t=[].slice.call(arguments);a&&clearTimeout(a),a=setTimeout(function(){a=null,i||n.apply(void 0,t);},o),i&&!a&&n.apply(void 0,t);}),!0),this.searchElement.input.addEventListener("keydown",function(t){return l.selectResult(t)},!0),this.searchElement.input.addEventListener("keydown",function(t){return l.clearResults(t,!0)},!0)),this.searchElement.form.addEventListener("click",function(t){t.preventDefault();},!1);},onAdd:function(e){var r=this.options,n=r.showMarker,o=r.style;if(this.map=e,n&&this.markers.addTo(e),"bar"===o){var i=e.getContainer().querySelector(".leaflet-control-container");this.container=s("div","leaflet-control-geosearch leaflet-geosearch-bar"),this.container.appendChild(this.searchElement.form),i.appendChild(this.container);}return leafletSrcExports.DomEvent.disableClickPropagation(this.searchElement.form),this.searchElement.container},onRemove:function(){var t;return null==(t=this.container)||t.remove(),this},open:function(){var t=this.searchElement,e=t.input;c(t.container,"active"),e.focus();},close:function(){u(this.searchElement.container,"active"),this.clearResults();},onClick:function(t){t.preventDefault(),t.stopPropagation(),this.searchElement.container.classList.contains("active")?this.close():this.open();},selectResult:function(t){if(-1!==[p,d,f].indexOf(t.keyCode))if(t.preventDefault(),t.keyCode!==p){var e=this.resultList.count()-1;if(!(e<0)){var r=this.resultList.selected,n=t.keyCode===d?r+1:r-1,o=this.resultList.select(n<0?e:n>e?0:n);this.searchElement.input.value=o.label;}}else {var i=this.resultList.select(this.resultList.selected);this.onSubmit({query:this.searchElement.input.value,data:i});}},clearResults:function(t,e){if(void 0===e&&(e=!1),!t||27===t.keyCode){var r=this.options,n=r.autoComplete;!e&&r.keepResult||(this.searchElement.input.value="",this.markers.clearLayers()),n&&this.resultList.clear();}},autoSearch:function(t){try{var e=this;if(m.indexOf(t.keyCode)>-1)return Promise.resolve();var r=t.target.value,n=e.options.provider,o=function(){if(r.length)return Promise.resolve(n.search({query:r})).then(function(t){t=t.slice(0,e.options.maxSuggestions),e.resultList.render(t,e.options.resultFormat);});e.resultList.clear();}();return Promise.resolve(o&&o.then?o.then(function(){}):void 0)}catch(t){return Promise.reject(t)}},onSubmit:function(t){try{var e=this;return Promise.resolve(e.options.provider.search(t)).then(function(r){r&&r.length>0&&e.showResult(r[0],t);})}catch(t){return Promise.reject(t)}},showResult:function(t,e){var r=this.options,n=r.autoClose,o=r.updateMap,i=this.markers.getLayers();i.length>=this.options.maxMarkers&&this.markers.removeLayer(i[0]);var s=this.addMarker(t,e);o&&this.centerMap(t),this.map.fireEvent("geosearch/showlocation",{location:t,marker:s}),n&&this.closeResults();},closeResults:function(){var t=this.searchElement.container;t.classList.contains("active")&&u(t,"active"),this.clearResults();},addMarker:function(e,r){var n=this,o=this.options,i=o.marker,s=o.showPopup,a=o.popupFormat,l=new leafletSrcExports.Marker([e.y,e.x],i),c=e.label;return "function"==typeof a&&(c=a({query:r,result:e})),l.bindPopup(c),this.markers.addLayer(l),s&&l.openPopup(),i.draggable&&l.on("dragend",function(t){n.map.fireEvent("geosearch/marker/dragend",{location:l.getLatLng(),event:t});}),l},centerMap:function(e){var r=this.options,n=r.retainZoomLevel,o=r.animateZoom,i=e.bounds?new leafletSrcExports.LatLngBounds(e.bounds):new leafletSrcExports.LatLng(e.y,e.x).toBounds(10),s=i.isValid()?i:this.markers.getBounds();!n&&i.isValid()&&!e.bounds||n||!i.isValid()?this.map.setView(s.getCenter(),this.getZoom(),{animate:o}):this.map.fitBounds(s,{animate:o});},getZoom:function(){var t=this.options,e=t.zoomLevel;return t.retainZoomLevel?this.map.getZoom():e}});!function(t){t[t.SEARCH=0]="SEARCH",t[t.REVERSE=1]="REVERSE";}(h||(h={}));var x,k=/*#__PURE__*/function(){function t(t){void 0===t&&(t={}),this.options=void 0,this.options=t;}var r=t.prototype;return r.getParamString=function(t){void 0===t&&(t={});var r=e({},this.options.params,t);return Object.keys(r).map(function(t){return encodeURIComponent(t)+"="+encodeURIComponent(r[t])}).join("&")},r.getUrl=function(t,e){return t+"?"+this.getParamString(e)},r.search=function(t){try{var e=this,r=e.endpoint({query:t.query,type:h.SEARCH});return Promise.resolve(fetch(r)).then(function(t){return Promise.resolve(t.json()).then(function(t){return e.parse({data:t})})})}catch(t){return Promise.reject(t)}},t}();!function(t){t[t.INITIALIZED=0]="INITIALIZED",t[t.LOADING=1]="LOADING",t[t.SUCCESS=2]="SUCCESS",t[t.FAILURE=3]="FAILURE";}(x||(x={}));var O=/*#__PURE__*/function(t){function e(e){var r;void 0===e&&(e={}),(r=t.call(this,e)||this).searchUrl=void 0,r.reverseUrl=void 0;var n="https://nominatim.openstreetmap.org";return r.searchUrl=e.searchUrl||n+"/search",r.reverseUrl=e.reverseUrl||n+"/reverse",r}r(e,t);var n=e.prototype;return n.endpoint=function(t){var e=t.query,r=t.type,n="string"==typeof e?{q:e}:e;return n.format="json",this.getUrl(r===h.REVERSE?this.reverseUrl:this.searchUrl,n)},n.parse=function(t){return (Array.isArray(t.data)?t.data:[t.data]).map(function(t){return {x:Number(t.lon),y:Number(t.lat),label:t.display_name,bounds:[[parseFloat(t.boundingbox[0]),parseFloat(t.boundingbox[2])],[parseFloat(t.boundingbox[1]),parseFloat(t.boundingbox[3])]],raw:t}})},e}(k);
 
     // Paired down version of: https://leafletjs.com/examples/choropleth/us-states.js
     const statesData = { "type": "FeatureCollection", "features": [
@@ -15312,9 +15575,9 @@ var app = (function () {
     /* src/components/locationPicker/Leaflet.svelte generated by Svelte v3.59.2 */
 
     const { Error: Error_1 } = globals;
-    const file$9 = "src/components/locationPicker/Leaflet.svelte";
+    const file$b = "src/components/locationPicker/Leaflet.svelte";
 
-    // (86:1) {#if leafMap}
+    // (83:1) {#if leafMap}
     function create_if_block$3(ctx) {
     	let current;
     	const default_slot_template = /*#slots*/ ctx[9].default;
@@ -15365,14 +15628,14 @@ var app = (function () {
     		block,
     		id: create_if_block$3.name,
     		type: "if",
-    		source: "(86:1) {#if leafMap}",
+    		source: "(83:1) {#if leafMap}",
     		ctx
     	});
 
     	return block;
     }
 
-    function create_fragment$9(ctx) {
+    function create_fragment$b(ctx) {
     	let div;
     	let t;
     	let form;
@@ -15388,17 +15651,17 @@ var app = (function () {
     			form = element("form");
     			input = element("input");
     			attr_dev(div, "id", "map-container");
-    			attr_dev(div, "class", "svelte-500j71");
-    			add_location(div, file$9, 84, 0, 3123);
+    			attr_dev(div, "class", "svelte-12f2s4l");
+    			add_location(div, file$b, 81, 0, 2926);
     			attr_dev(input, "type", "text");
     			attr_dev(input, "id", "search");
     			attr_dev(input, "name", "search");
     			attr_dev(input, "placeholder", "Enter Address");
-    			attr_dev(input, "class", "svelte-500j71");
-    			add_location(input, file$9, 90, 1, 3235);
+    			attr_dev(input, "class", "svelte-12f2s4l");
+    			add_location(input, file$b, 87, 1, 3038);
     			attr_dev(form, "id", "map-search");
-    			attr_dev(form, "class", "svelte-500j71");
-    			add_location(form, file$9, 89, 0, 3211);
+    			attr_dev(form, "class", "svelte-12f2s4l");
+    			add_location(form, file$b, 86, 0, 3014);
     		},
     		l: function claim(nodes) {
     			throw new Error_1("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -15456,7 +15719,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$9.name,
+    		id: create_fragment$b.name,
     		type: "component",
     		source: "",
     		ctx
@@ -15465,7 +15728,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$9($$self, $$props, $$invalidate) {
+    function instance$b($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Leaflet', slots, ['default']);
     	let { bounds = undefined } = $$props;
@@ -15474,10 +15737,7 @@ var app = (function () {
     	let { locations = null } = $$props;
     	let { handleMapClick = e => null } = $$props;
     	let { handleSearch = (event, inputEl, provider) => null } = $$props;
-
-    	// const dispatch = createEventDispatcher();
     	let leafMap;
-
     	let mapElement;
 
     	onMount(() => {
@@ -15485,8 +15745,6 @@ var app = (function () {
     			throw new Error('Must set either bounds, view and zoom, or locations.');
     		}
 
-    		// // example to expose map events to parent components:
-    		// leafMap = map(mapElement).on('zoom', (e) => dispatch('zoom', e));
     		$$invalidate(0, leafMap = leafletSrcExports.map(mapElement));
 
     		leafletSrcExports.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -15584,7 +15842,6 @@ var app = (function () {
     		map: leafletSrcExports.map,
     		geoJson: leafletSrcExports.geoJson,
     		OpenStreetMapProvider: O,
-    		GeoSearchControl: w,
     		statesData,
     		bounds,
     		view,
@@ -15630,7 +15887,7 @@ var app = (function () {
     	constructor(options) {
     		super(options);
 
-    		init(this, options, instance$9, create_fragment$9, safe_not_equal, {
+    		init(this, options, instance$b, create_fragment$b, safe_not_equal, {
     			bounds: 2,
     			view: 3,
     			zoom: 4,
@@ -15643,7 +15900,7 @@ var app = (function () {
     			component: this,
     			tagName: "Leaflet",
     			options,
-    			id: create_fragment$9.name
+    			id: create_fragment$b.name
     		});
     	}
 
@@ -15697,7 +15954,7 @@ var app = (function () {
     }
 
     /* src/components/locationPicker/Marker.svelte generated by Svelte v3.59.2 */
-    const file$8 = "src/components/locationPicker/Marker.svelte";
+    const file$a = "src/components/locationPicker/Marker.svelte";
 
     // (38:1) {#if leafMarker}
     function create_if_block$2(ctx) {
@@ -15757,7 +16014,7 @@ var app = (function () {
     	return block;
     }
 
-    function create_fragment$8(ctx) {
+    function create_fragment$a(ctx) {
     	let div;
     	let current;
     	let if_block = /*leafMarker*/ ctx[0] && create_if_block$2(ctx);
@@ -15766,7 +16023,7 @@ var app = (function () {
     		c: function create() {
     			div = element("div");
     			if (if_block) if_block.c();
-    			add_location(div, file$8, 36, 0, 1044);
+    			add_location(div, file$a, 36, 0, 1044);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -15819,7 +16076,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$8.name,
+    		id: create_fragment$a.name,
     		type: "component",
     		source: "",
     		ctx
@@ -15828,7 +16085,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$8($$self, $$props, $$invalidate) {
+    function instance$a($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Marker', slots, ['default']);
     	let { width } = $$props;
@@ -15952,7 +16209,7 @@ var app = (function () {
     	constructor(options) {
     		super(options);
 
-    		init(this, options, instance$8, create_fragment$8, safe_not_equal, {
+    		init(this, options, instance$a, create_fragment$a, safe_not_equal, {
     			width: 2,
     			height: 3,
     			latLng: 4,
@@ -15964,7 +16221,7 @@ var app = (function () {
     			component: this,
     			tagName: "Marker",
     			options,
-    			id: create_fragment$8.name
+    			id: create_fragment$a.name
     		});
     	}
 
@@ -16010,7 +16267,7 @@ var app = (function () {
     }
 
     /* src/components/locationPicker/Tooltip.svelte generated by Svelte v3.59.2 */
-    const file$7 = "src/components/locationPicker/Tooltip.svelte";
+    const file$9 = "src/components/locationPicker/Tooltip.svelte";
 
     // (29:1) {#if open || isActive}
     function create_if_block$1(ctx) {
@@ -16070,7 +16327,7 @@ var app = (function () {
     	return block;
     }
 
-    function create_fragment$7(ctx) {
+    function create_fragment$9(ctx) {
     	let div;
     	let current;
     	let if_block = (/*open*/ ctx[2] || /*isActive*/ ctx[0]) && create_if_block$1(ctx);
@@ -16080,7 +16337,7 @@ var app = (function () {
     			div = element("div");
     			if (if_block) if_block.c();
     			attr_dev(div, "class", "tooltip-adjustment");
-    			add_location(div, file$7, 27, 0, 842);
+    			add_location(div, file$9, 27, 0, 835);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16133,7 +16390,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$7.name,
+    		id: create_fragment$9.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16142,7 +16399,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$7($$self, $$props, $$invalidate) {
+    function instance$9($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Tooltip', slots, ['default']);
     	let leafTooltip;
@@ -16200,7 +16457,6 @@ var app = (function () {
     		onMount,
     		onDestroy,
     		getContext,
-    		point: leafletSrcExports.point,
     		tooltip: leafletSrcExports.tooltip,
     		leafTooltip,
     		tooltipElement,
@@ -16227,13 +16483,13 @@ var app = (function () {
     class Tooltip extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$7, create_fragment$7, safe_not_equal, { isActive: 0 });
+    		init(this, options, instance$9, create_fragment$9, safe_not_equal, { isActive: 0 });
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Tooltip",
     			options,
-    			id: create_fragment$7.name
+    			id: create_fragment$9.name
     		});
     	}
 
@@ -16248,9 +16504,9 @@ var app = (function () {
 
     /* src/components/locationPicker/pin-red.svelte generated by Svelte v3.59.2 */
 
-    const file$6 = "src/components/locationPicker/pin-red.svelte";
+    const file$8 = "src/components/locationPicker/pin-red.svelte";
 
-    function create_fragment$6(ctx) {
+    function create_fragment$8(ctx) {
     	let svg;
     	let line;
     	let circle0;
@@ -16271,17 +16527,17 @@ var app = (function () {
     			attr_dev(line, "y1", "20");
     			attr_dev(line, "x2", "10");
     			attr_dev(line, "y2", "38");
-    			add_location(line, file$6, 1, 0, 214);
+    			add_location(line, file$8, 1, 0, 214);
     			set_style(circle0, "fill", "#DD352E");
     			attr_dev(circle0, "cx", "10");
     			attr_dev(circle0, "cy", "10");
     			attr_dev(circle0, "r", "10");
-    			add_location(circle0, file$6, 2, 0, 345);
+    			add_location(circle0, file$8, 2, 0, 345);
     			set_style(circle1, "fill", "#F76363");
     			attr_dev(circle1, "cx", "6");
     			attr_dev(circle1, "cy", "7");
     			attr_dev(circle1, "r", "2");
-    			add_location(circle1, file$6, 3, 0, 400);
+    			add_location(circle1, file$8, 3, 0, 400);
     			attr_dev(svg, "xmlns", "http://www.w3.org/2000/svg");
     			attr_dev(svg, "xmlns:xlink", "http://www.w3.org/1999/xlink");
     			attr_dev(svg, "version", "1.1");
@@ -16291,7 +16547,7 @@ var app = (function () {
     			set_style(svg, "enable-background", "new 0 0 39.5 39.5");
     			attr_dev(svg, "xml:space", "preserve");
     			attr_dev(svg, "viewBox", "0 0 20 39.5");
-    			add_location(svg, file$6, 0, 0, 0);
+    			add_location(svg, file$8, 0, 0, 0);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16312,7 +16568,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$6.name,
+    		id: create_fragment$8.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16321,7 +16577,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$6($$self, $$props) {
+    function instance$8($$self, $$props) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Pin_red', slots, []);
     	const writable_props = [];
@@ -16336,22 +16592,22 @@ var app = (function () {
     class Pin_red extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$6, create_fragment$6, safe_not_equal, {});
+    		init(this, options, instance$8, create_fragment$8, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Pin_red",
     			options,
-    			id: create_fragment$6.name
+    			id: create_fragment$8.name
     		});
     	}
     }
 
     /* src/components/locationPicker/pin-blue.svelte generated by Svelte v3.59.2 */
 
-    const file$5 = "src/components/locationPicker/pin-blue.svelte";
+    const file$7 = "src/components/locationPicker/pin-blue.svelte";
 
-    function create_fragment$5(ctx) {
+    function create_fragment$7(ctx) {
     	let svg;
     	let line;
     	let circle0;
@@ -16402,32 +16658,32 @@ var app = (function () {
     			attr_dev(line, "y1", "20");
     			attr_dev(line, "x2", "10");
     			attr_dev(line, "y2", "38");
-    			add_location(line, file$5, 1, 0, 214);
+    			add_location(line, file$7, 1, 0, 214);
     			set_style(circle0, "fill", "#1777f2");
     			attr_dev(circle0, "cx", "10");
     			attr_dev(circle0, "cy", "10");
     			attr_dev(circle0, "r", "10");
-    			add_location(circle0, file$5, 2, 0, 345);
+    			add_location(circle0, file$7, 2, 0, 345);
     			set_style(circle1, "fill", "#a0caff");
     			attr_dev(circle1, "cx", "6");
     			attr_dev(circle1, "cy", "7");
     			attr_dev(circle1, "r", "2");
-    			add_location(circle1, file$5, 3, 0, 400);
-    			add_location(g0, file$5, 4, 0, 452);
-    			add_location(g1, file$5, 6, 0, 461);
-    			add_location(g2, file$5, 8, 0, 470);
-    			add_location(g3, file$5, 10, 0, 479);
-    			add_location(g4, file$5, 12, 0, 488);
-    			add_location(g5, file$5, 14, 0, 497);
-    			add_location(g6, file$5, 16, 0, 506);
-    			add_location(g7, file$5, 18, 0, 515);
-    			add_location(g8, file$5, 20, 0, 524);
-    			add_location(g9, file$5, 22, 0, 533);
-    			add_location(g10, file$5, 24, 0, 542);
-    			add_location(g11, file$5, 26, 0, 551);
-    			add_location(g12, file$5, 28, 0, 560);
-    			add_location(g13, file$5, 30, 0, 569);
-    			add_location(g14, file$5, 32, 0, 578);
+    			add_location(circle1, file$7, 3, 0, 400);
+    			add_location(g0, file$7, 4, 0, 452);
+    			add_location(g1, file$7, 6, 0, 461);
+    			add_location(g2, file$7, 8, 0, 470);
+    			add_location(g3, file$7, 10, 0, 479);
+    			add_location(g4, file$7, 12, 0, 488);
+    			add_location(g5, file$7, 14, 0, 497);
+    			add_location(g6, file$7, 16, 0, 506);
+    			add_location(g7, file$7, 18, 0, 515);
+    			add_location(g8, file$7, 20, 0, 524);
+    			add_location(g9, file$7, 22, 0, 533);
+    			add_location(g10, file$7, 24, 0, 542);
+    			add_location(g11, file$7, 26, 0, 551);
+    			add_location(g12, file$7, 28, 0, 560);
+    			add_location(g13, file$7, 30, 0, 569);
+    			add_location(g14, file$7, 32, 0, 578);
     			attr_dev(svg, "xmlns", "http://www.w3.org/2000/svg");
     			attr_dev(svg, "xmlns:xlink", "http://www.w3.org/1999/xlink");
     			attr_dev(svg, "version", "1.1");
@@ -16437,7 +16693,7 @@ var app = (function () {
     			set_style(svg, "enable-background", "new 0 0 39.5 39.5");
     			attr_dev(svg, "xml:space", "preserve");
     			attr_dev(svg, "viewBox", "0 0 20 39.5");
-    			add_location(svg, file$5, 0, 0, 0);
+    			add_location(svg, file$7, 0, 0, 0);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16473,7 +16729,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$5.name,
+    		id: create_fragment$7.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16482,7 +16738,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$5($$self, $$props) {
+    function instance$7($$self, $$props) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Pin_blue', slots, []);
     	const writable_props = [];
@@ -16497,22 +16753,22 @@ var app = (function () {
     class Pin_blue extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$5, create_fragment$5, safe_not_equal, {});
+    		init(this, options, instance$7, create_fragment$7, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Pin_blue",
     			options,
-    			id: create_fragment$5.name
+    			id: create_fragment$7.name
     		});
     	}
     }
 
     /* src/components/Button.svelte generated by Svelte v3.59.2 */
 
-    const file$4 = "src/components/Button.svelte";
+    const file$6 = "src/components/Button.svelte";
 
-    function create_fragment$4(ctx) {
+    function create_fragment$6(ctx) {
     	let button;
     	let button_class_value;
     	let current;
@@ -16525,8 +16781,8 @@ var app = (function () {
     		c: function create() {
     			button = element("button");
     			if (default_slot) default_slot.c();
-    			attr_dev(button, "class", button_class_value = "" + (null_to_empty(`btn-container btn-${/*btnType*/ ctx[0]}`) + " svelte-4g4aez"));
-    			add_location(button, file$4, 4, 0, 94);
+    			attr_dev(button, "class", button_class_value = "" + (null_to_empty(`btn-container btn-${/*btnType*/ ctx[0]}`) + " svelte-r9kikz"));
+    			add_location(button, file$6, 4, 0, 94);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16574,7 +16830,7 @@ var app = (function () {
     				}
     			}
 
-    			if (!current || dirty & /*btnType*/ 1 && button_class_value !== (button_class_value = "" + (null_to_empty(`btn-container btn-${/*btnType*/ ctx[0]}`) + " svelte-4g4aez"))) {
+    			if (!current || dirty & /*btnType*/ 1 && button_class_value !== (button_class_value = "" + (null_to_empty(`btn-container btn-${/*btnType*/ ctx[0]}`) + " svelte-r9kikz"))) {
     				attr_dev(button, "class", button_class_value);
     			}
     		},
@@ -16597,7 +16853,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$4.name,
+    		id: create_fragment$6.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16606,7 +16862,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$4($$self, $$props, $$invalidate) {
+    function instance$6($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Button', slots, ['default']);
     	let { btnType = 'default' } = $$props;
@@ -16640,13 +16896,13 @@ var app = (function () {
     class Button extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$4, create_fragment$4, safe_not_equal, { btnType: 0, onClick: 1 });
+    		init(this, options, instance$6, create_fragment$6, safe_not_equal, { btnType: 0, onClick: 1 });
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Button",
     			options,
-    			id: create_fragment$4.name
+    			id: create_fragment$6.name
     		});
     	}
 
@@ -16669,15 +16925,15 @@ var app = (function () {
 
     /* node_modules/svelte-loading-spinners/Circle2.svelte generated by Svelte v3.59.2 */
 
-    const file$3 = "node_modules/svelte-loading-spinners/Circle2.svelte";
+    const file$5 = "node_modules/svelte-loading-spinners/Circle2.svelte";
 
-    function create_fragment$3(ctx) {
+    function create_fragment$5(ctx) {
     	let div;
 
     	const block = {
     		c: function create() {
     			div = element("div");
-    			attr_dev(div, "class", "circle svelte-1w4sjib");
+    			attr_dev(div, "class", "circle svelte-zh1sbb");
     			set_style(div, "--size", /*size*/ ctx[0] + /*unit*/ ctx[1]);
     			set_style(div, "--colorInner", /*colorInner*/ ctx[5]);
     			set_style(div, "--colorCenter", /*colorCenter*/ ctx[4]);
@@ -16686,7 +16942,7 @@ var app = (function () {
     			set_style(div, "--durationCenter", /*durationCenter*/ ctx[8]);
     			set_style(div, "--durationOuter", /*durationOuter*/ ctx[6]);
     			toggle_class(div, "pause-animation", /*pause*/ ctx[2]);
-    			add_location(div, file$3, 12, 0, 418);
+    			add_location(div, file$5, 12, 0, 418);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16736,7 +16992,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$3.name,
+    		id: create_fragment$5.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16745,7 +17001,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$3($$self, $$props, $$invalidate) {
+    function instance$5($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Circle2', slots, []);
     	let { size = '60' } = $$props;
@@ -16837,7 +17093,7 @@ var app = (function () {
     	constructor(options) {
     		super(options);
 
-    		init(this, options, instance$3, create_fragment$3, safe_not_equal, {
+    		init(this, options, instance$5, create_fragment$5, safe_not_equal, {
     			size: 0,
     			unit: 1,
     			pause: 2,
@@ -16854,7 +17110,7 @@ var app = (function () {
     			component: this,
     			tagName: "Circle2",
     			options,
-    			id: create_fragment$3.name
+    			id: create_fragment$5.name
     		});
     	}
 
@@ -16940,9 +17196,9 @@ var app = (function () {
     }
 
     /* src/components/Loading.svelte generated by Svelte v3.59.2 */
-    const file$2 = "src/components/Loading.svelte";
+    const file$4 = "src/components/Loading.svelte";
 
-    function create_fragment$2(ctx) {
+    function create_fragment$4(ctx) {
     	let div;
     	let circle2;
     	let current;
@@ -16952,8 +17208,8 @@ var app = (function () {
     		c: function create() {
     			div = element("div");
     			create_component(circle2.$$.fragment);
-    			attr_dev(div, "class", "loading-container svelte-je3f7r");
-    			add_location(div, file$2, 4, 0, 73);
+    			attr_dev(div, "class", "loading-container svelte-133uxm3");
+    			add_location(div, file$4, 4, 0, 73);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -16981,7 +17237,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$2.name,
+    		id: create_fragment$4.name,
     		type: "component",
     		source: "",
     		ctx
@@ -16990,7 +17246,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$2($$self, $$props, $$invalidate) {
+    function instance$4($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('Loading', slots, []);
     	const writable_props = [];
@@ -17006,13 +17262,13 @@ var app = (function () {
     class Loading extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$2, create_fragment$2, safe_not_equal, {});
+    		init(this, options, instance$4, create_fragment$4, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "Loading",
     			options,
-    			id: create_fragment$2.name
+    			id: create_fragment$4.name
     		});
     	}
     }
@@ -17062,9 +17318,9 @@ var app = (function () {
 
     /* src/components/locationPicker/LocationPicker.svelte generated by Svelte v3.59.2 */
 
-    const { Object: Object_1, console: console_1 } = globals;
+    const { Object: Object_1, console: console_1$1 } = globals;
 
-    const file$1 = "src/components/locationPicker/LocationPicker.svelte";
+    const file$3 = "src/components/locationPicker/LocationPicker.svelte";
 
     function get_each_context(ctx, list, i) {
     	const child_ctx = ctx.slice();
@@ -17140,10 +17396,10 @@ var app = (function () {
     			if (if_block1) if_block1.c();
     			t2 = space();
     			if (if_block2) if_block2.c();
-    			attr_dev(div0, "class", "location-picker-modal-content svelte-1vfo49p");
-    			add_location(div0, file$1, 178, 2, 6074);
-    			attr_dev(div1, "class", "location-picker-modal svelte-1vfo49p");
-    			add_location(div1, file$1, 177, 1, 5982);
+    			attr_dev(div0, "class", "location-picker-modal-content svelte-1ii1wmu");
+    			add_location(div0, file$3, 178, 2, 6110);
+    			attr_dev(div1, "class", "location-picker-modal svelte-1ii1wmu");
+    			add_location(div1, file$3, 177, 1, 6018);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div1, anchor);
@@ -17771,9 +18027,9 @@ var app = (function () {
     			div = element("div");
     			p = element("p");
     			p.textContent = "Select your high tunnel location to get started";
-    			add_location(p, file$1, 206, 25, 6925);
-    			attr_dev(div, "class", "message svelte-1vfo49p");
-    			add_location(div, file$1, 206, 4, 6904);
+    			add_location(p, file$3, 206, 25, 6961);
+    			attr_dev(div, "class", "message svelte-1ii1wmu");
+    			add_location(div, file$3, 206, 4, 6940);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -17806,9 +18062,9 @@ var app = (function () {
     			div = element("div");
     			p = element("p");
     			t = text(/*badMessage*/ ctx[0]);
-    			add_location(p, file$1, 209, 25, 7040);
-    			attr_dev(div, "class", "message svelte-1vfo49p");
-    			add_location(div, file$1, 209, 4, 7019);
+    			add_location(p, file$3, 209, 25, 7076);
+    			attr_dev(div, "class", "message svelte-1ii1wmu");
+    			add_location(div, file$3, 209, 4, 7055);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -17873,7 +18129,7 @@ var app = (function () {
     	return block;
     }
 
-    function create_fragment$1(ctx) {
+    function create_fragment$3(ctx) {
     	let div;
     	let h3;
     	let t0_value = /*$activeLocation*/ ctx[4]?.shortAddress + "";
@@ -17905,10 +18161,10 @@ var app = (function () {
     			t2 = space();
     			if (if_block) if_block.c();
     			if_block_anchor = empty();
-    			attr_dev(h3, "class", "location-picker-address svelte-1vfo49p");
-    			add_location(h3, file$1, 172, 1, 5828);
-    			attr_dev(div, "class", "location-picker-display svelte-1vfo49p");
-    			add_location(div, file$1, 171, 0, 5789);
+    			attr_dev(h3, "class", "location-picker-address svelte-1ii1wmu");
+    			add_location(h3, file$3, 172, 1, 5864);
+    			attr_dev(div, "class", "location-picker-display svelte-1ii1wmu");
+    			add_location(div, file$3, 171, 0, 5825);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -17979,7 +18235,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_fragment$1.name,
+    		id: create_fragment$3.name,
     		type: "component",
     		source: "",
     		ctx
@@ -17988,7 +18244,7 @@ var app = (function () {
     	return block;
     }
 
-    function instance$1($$self, $$props, $$invalidate) {
+    function instance$3($$self, $$props, $$invalidate) {
     	let $locations;
     	let $activeLocation;
     	let $isLoadingLocation;
@@ -18106,7 +18362,7 @@ var app = (function () {
 
     			set_store_value(isLoadingLocation, $isLoadingLocation = false, $isLoadingLocation);
     		}).catch(e => {
-    			console.log(e);
+    			console.error('Failed location search: ', e);
     			$$invalidate(0, badMessage = 'An error occurred finding that location. Please make sure you are selecting land within one of the outlined states.');
     			set_store_value(isLoadingLocation, $isLoadingLocation = false, $isLoadingLocation);
     		});
@@ -18181,7 +18437,7 @@ var app = (function () {
     	const writable_props = [];
 
     	Object_1.keys($$props).forEach(key => {
-    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1.warn(`<LocationPicker> was created with unknown prop '${key}'`);
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1$1.warn(`<LocationPicker> was created with unknown prop '${key}'`);
     	});
 
     	function click_handler(event) {
@@ -18259,11 +18515,245 @@ var app = (function () {
     class LocationPicker extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$1, create_fragment$1, safe_not_equal, {});
+    		init(this, options, instance$3, create_fragment$3, safe_not_equal, {});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
     			tagName: "LocationPicker",
+    			options,
+    			id: create_fragment$3.name
+    		});
+    	}
+    }
+
+    /* src/components/options/OptionsContainer.svelte generated by Svelte v3.59.2 */
+
+    const file$2 = "src/components/options/OptionsContainer.svelte";
+
+    function create_fragment$2(ctx) {
+    	let div1;
+    	let div0;
+    	let h4;
+    	let t0;
+    	let t1;
+    	let current;
+    	const default_slot_template = /*#slots*/ ctx[2].default;
+    	const default_slot = create_slot(default_slot_template, ctx, /*$$scope*/ ctx[1], null);
+
+    	const block = {
+    		c: function create() {
+    			div1 = element("div");
+    			div0 = element("div");
+    			h4 = element("h4");
+    			t0 = text(/*sectionName*/ ctx[0]);
+    			t1 = space();
+    			if (default_slot) default_slot.c();
+    			attr_dev(h4, "class", "svelte-hj0stx");
+    			add_location(h4, file$2, 5, 36, 119);
+    			attr_dev(div0, "class", "options-section-name svelte-hj0stx");
+    			add_location(div0, file$2, 5, 2, 85);
+    			attr_dev(div1, "class", "options-section svelte-hj0stx");
+    			add_location(div1, file$2, 4, 0, 53);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div1, anchor);
+    			append_dev(div1, div0);
+    			append_dev(div0, h4);
+    			append_dev(h4, t0);
+    			append_dev(div1, t1);
+
+    			if (default_slot) {
+    				default_slot.m(div1, null);
+    			}
+
+    			current = true;
+    		},
+    		p: function update(ctx, [dirty]) {
+    			if (!current || dirty & /*sectionName*/ 1) set_data_dev(t0, /*sectionName*/ ctx[0]);
+
+    			if (default_slot) {
+    				if (default_slot.p && (!current || dirty & /*$$scope*/ 2)) {
+    					update_slot_base(
+    						default_slot,
+    						default_slot_template,
+    						ctx,
+    						/*$$scope*/ ctx[1],
+    						!current
+    						? get_all_dirty_from_scope(/*$$scope*/ ctx[1])
+    						: get_slot_changes(default_slot_template, /*$$scope*/ ctx[1], dirty, null),
+    						null
+    					);
+    				}
+    			}
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(default_slot, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(default_slot, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div1);
+    			if (default_slot) default_slot.d(detaching);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$2.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$2($$self, $$props, $$invalidate) {
+    	let { $$slots: slots = {}, $$scope } = $$props;
+    	validate_slots('OptionsContainer', slots, ['default']);
+    	let { sectionName = null } = $$props;
+    	const writable_props = ['sectionName'];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<OptionsContainer> was created with unknown prop '${key}'`);
+    	});
+
+    	$$self.$$set = $$props => {
+    		if ('sectionName' in $$props) $$invalidate(0, sectionName = $$props.sectionName);
+    		if ('$$scope' in $$props) $$invalidate(1, $$scope = $$props.$$scope);
+    	};
+
+    	$$self.$capture_state = () => ({ sectionName });
+
+    	$$self.$inject_state = $$props => {
+    		if ('sectionName' in $$props) $$invalidate(0, sectionName = $$props.sectionName);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [sectionName, $$scope, slots];
+    }
+
+    class OptionsContainer extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+    		init(this, options, instance$2, create_fragment$2, safe_not_equal, { sectionName: 0 });
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "OptionsContainer",
+    			options,
+    			id: create_fragment$2.name
+    		});
+    	}
+
+    	get sectionName() {
+    		throw new Error("<OptionsContainer>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set sectionName(value) {
+    		throw new Error("<OptionsContainer>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+    }
+
+    /* src/components/options/ToolOptions.svelte generated by Svelte v3.59.2 */
+    const file$1 = "src/components/options/ToolOptions.svelte";
+
+    function create_fragment$1(ctx) {
+    	let div;
+    	let optionscontainer0;
+    	let t;
+    	let optionscontainer1;
+    	let current;
+
+    	optionscontainer0 = new OptionsContainer({
+    			props: { sectionName: "Development Only" },
+    			$$inline: true
+    		});
+
+    	optionscontainer1 = new OptionsContainer({
+    			props: { sectionName: "Options" },
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			div = element("div");
+    			create_component(optionscontainer0.$$.fragment);
+    			t = space();
+    			create_component(optionscontainer1.$$.fragment);
+    			add_location(div, file$1, 9, 0, 210);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div, anchor);
+    			mount_component(optionscontainer0, div, null);
+    			append_dev(div, t);
+    			mount_component(optionscontainer1, div, null);
+    			current = true;
+    		},
+    		p: noop,
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(optionscontainer0.$$.fragment, local);
+    			transition_in(optionscontainer1.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(optionscontainer0.$$.fragment, local);
+    			transition_out(optionscontainer1.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div);
+    			destroy_component(optionscontainer0);
+    			destroy_component(optionscontainer1);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_fragment$1.name,
+    		type: "component",
+    		source: "",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function instance$1($$self, $$props, $$invalidate) {
+    	let { $$slots: slots = {}, $$scope } = $$props;
+    	validate_slots('ToolOptions', slots, []);
+    	const writable_props = [];
+
+    	Object.keys($$props).forEach(key => {
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<ToolOptions> was created with unknown prop '${key}'`);
+    	});
+
+    	$$self.$capture_state = () => ({ OptionsContainer });
+    	return [];
+    }
+
+    class ToolOptions extends SvelteComponentDev {
+    	constructor(options) {
+    		super(options);
+    		init(this, options, instance$1, create_fragment$1, safe_not_equal, {});
+
+    		dispatch_dev("SvelteRegisterComponent", {
+    			component: this,
+    			tagName: "ToolOptions",
     			options,
     			id: create_fragment$1.name
     		});
@@ -18271,6 +18761,8 @@ var app = (function () {
     }
 
     /* src/App.svelte generated by Svelte v3.59.2 */
+
+    const { console: console_1 } = globals;
     const file = "src/App.svelte";
 
     function create_fragment(ctx) {
@@ -18278,8 +18770,11 @@ var app = (function () {
     	let h1;
     	let t1;
     	let locationpicker;
+    	let t2;
+    	let tooloptions;
     	let current;
     	locationpicker = new LocationPicker({ $$inline: true });
+    	tooloptions = new ToolOptions({ $$inline: true });
 
     	const block = {
     		c: function create() {
@@ -18288,10 +18783,12 @@ var app = (function () {
     			h1.textContent = "High Tunnel Tomatoes";
     			t1 = space();
     			create_component(locationpicker.$$.fragment);
-    			attr_dev(h1, "class", "svelte-1tky8bj");
-    			add_location(h1, file, 4, 1, 117);
-    			attr_dev(main, "class", "svelte-1tky8bj");
-    			add_location(main, file, 3, 0, 109);
+    			t2 = space();
+    			create_component(tooloptions.$$.fragment);
+    			attr_dev(h1, "class", "svelte-1gqwiq3");
+    			add_location(h1, file, 8, 1, 314);
+    			attr_dev(main, "class", "svelte-1gqwiq3");
+    			add_location(main, file, 7, 0, 306);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -18301,21 +18798,26 @@ var app = (function () {
     			append_dev(main, h1);
     			append_dev(main, t1);
     			mount_component(locationpicker, main, null);
+    			append_dev(main, t2);
+    			mount_component(tooloptions, main, null);
     			current = true;
     		},
     		p: noop,
     		i: function intro(local) {
     			if (current) return;
     			transition_in(locationpicker.$$.fragment, local);
+    			transition_in(tooloptions.$$.fragment, local);
     			current = true;
     		},
     		o: function outro(local) {
     			transition_out(locationpicker.$$.fragment, local);
+    			transition_out(tooloptions.$$.fragment, local);
     			current = false;
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(main);
     			destroy_component(locationpicker);
+    			destroy_component(tooloptions);
     		}
     	};
 
@@ -18331,16 +18833,40 @@ var app = (function () {
     }
 
     function instance($$self, $$props, $$invalidate) {
+    	let $waterData;
+    	let $soilCharacteristics;
+    	validate_store(waterData, 'waterData');
+    	component_subscribe($$self, waterData, $$value => $$invalidate(0, $waterData = $$value));
+    	validate_store(soilCharacteristics, 'soilCharacteristics');
+    	component_subscribe($$self, soilCharacteristics, $$value => $$invalidate(1, $soilCharacteristics = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('App', slots, []);
     	const writable_props = [];
 
     	Object.keys($$props).forEach(key => {
-    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<App> was created with unknown prop '${key}'`);
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1.warn(`<App> was created with unknown prop '${key}'`);
     	});
 
-    	$$self.$capture_state = () => ({ LocationPicker });
-    	return [];
+    	$$self.$capture_state = () => ({
+    		LocationPicker,
+    		ToolOptions,
+    		soilCharacteristics,
+    		waterData,
+    		$waterData,
+    		$soilCharacteristics
+    	});
+
+    	$$self.$$.update = () => {
+    		if ($$self.$$.dirty & /*$soilCharacteristics*/ 2) {
+    			console.log($soilCharacteristics);
+    		}
+
+    		if ($$self.$$.dirty & /*$waterData*/ 1) {
+    			console.log($waterData);
+    		}
+    	};
+
+    	return [$waterData, $soilCharacteristics];
     }
 
     class App extends SvelteComponentDev {

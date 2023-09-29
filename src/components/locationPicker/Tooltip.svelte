@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy, getContext } from 'svelte';
-	import { point, tooltip } from 'leaflet';
+	import { tooltip } from 'leaflet';
 
 	let leafTooltip: L.Tooltip | undefined;
 	let tooltipElement: HTMLElement;

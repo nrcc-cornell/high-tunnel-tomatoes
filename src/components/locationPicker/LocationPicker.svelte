@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { activeLocation, locations, isLoadingLocation } from "../../store";
+	import { activeLocation, locations, isLoadingLocation } from "../../store/store";
 	import { onMount } from "svelte";
 
 	import Leaflet from './Leaflet.svelte';
@@ -110,7 +110,7 @@
 				$isLoadingLocation = false;
 			})
 			.catch((e) => {
-				console.log(e);
+				console.error('Failed location search: ', e);
 				badMessage = 'An error occurred finding that location. Please make sure you are selecting land within one of the outlined states.';
 				$isLoadingLocation = false;
 			});
@@ -246,6 +246,7 @@
 		justify-content: center;
 		align-items: center;
 		background-color: rgba(150,150,150,0.7);
+		z-index: 100;
 	}
 	
 	.location-picker-modal-content {

@@ -64,7 +64,8 @@ export default {
 		commonjs(),
 		typescript({
 			sourceMap: !production,
-			inlineSources: !production
+			inlineSources: !production,
+			rootDir: './src'
 		}),
 
 		// In dev mode, call `npm run start` once
@@ -83,3 +84,7 @@ export default {
 		clearScreen: false
 	}
 };
+
+
+
+// figure out css issue or redesign yourself

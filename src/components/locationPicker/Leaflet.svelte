@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount, onDestroy, setContext } from 'svelte';
-	// import { onMount, onDestroy, setContext, createEventDispatcher } from 'svelte';
 	import type { LocationObj } from '../../global';
 	import { tileLayer, map, geoJson} from 'leaflet';
-	import { OpenStreetMapProvider, GeoSearchControl } from 'leaflet-geosearch';
+	import type { GeoJsonObject } from 'geojson';
+	import { OpenStreetMapProvider } from 'leaflet-geosearch';
 	import 'leaflet/dist/leaflet.css';
 	import 'leaflet-geosearch/dist/geosearch.css';
 	import statesData from './northeast-states';
@@ -15,8 +15,6 @@
 	export let handleMapClick = (e) => null;
 	export let handleSearch = (event, inputEl, provider) => null;
 
-	// const dispatch = createEventDispatcher();
-
 	let leafMap: L.Map | undefined;
 	let mapElement: HTMLElement;
 
@@ -25,15 +23,13 @@
 			throw new Error('Must set either bounds, view and zoom, or locations.');
 		}
 
-		// // example to expose map events to parent components:
-		// leafMap = map(mapElement).on('zoom', (e) => dispatch('zoom', e));
 		leafMap = map(mapElement);
 
 		tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
 			attribution: `&copy;<a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>,&copy;<a href="https://carto.com/attributions" target="_blank">CARTO</a>`
 		}).addTo(leafMap);
 
-		geoJson(statesData, {
+		geoJson(statesData as GeoJsonObject, {
 			style: {
 				color: '#8c877b',
 				weight: 1.5,
@@ -104,7 +100,7 @@
 	<input type="text" id="search" name="search" placeholder="Enter Address"/>
 </form>
 
-<style>
+<style lang="scss">
 	#map-container {
 		width: 100%;
 		height: 100%;
@@ -118,9 +114,9 @@
 		transform: translateX(-50%);
 		z-index: 400;
 		width: 100%;
-	}
 
-	#map-search > input {
-		width: 50%;
+		input {
+			width: 50%;
+		}
 	}
 </style>

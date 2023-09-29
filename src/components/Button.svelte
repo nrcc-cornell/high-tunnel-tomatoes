@@ -7,7 +7,7 @@
   <slot />
 </button>
 
-<style>
+<style lang="scss">
   .btn-container {
     width: fit-content;
     height: 30px;
@@ -30,11 +30,11 @@
     background-color: black;
     color: white;
     border: 1px solid black;
-  }
 
-  .btn-default:hover {
-    background-color: rgb(50,50,50);
-    color: rgb(240,240,240);
+    &:hover {
+      background-color: rgb(50,50,50);
+      color: rgb(240,240,240);
+    }
   }
 
   @media (max-width: 785px), (max-height: 550px) {
