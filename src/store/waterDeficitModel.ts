@@ -14,32 +14,71 @@ type SoilCharacteristics = {
 
 // soildata:
 // soil moisture and drainage characteristics for different levels of soil water capacity
-const multiplier = 3;
+const timesSixInch = 3;
+const rounder = 100;
+const multiplier = timesSixInch * rounder;
 export const SOIL_DATA = {
   soilmoistureoptions: {
     low: {
-      wiltingpoint: 0.4 * multiplier,
-      prewiltingpoint: 0.64 * multiplier,
-      stressthreshold: 0.8 * multiplier,
-      fieldcapacity: 1.2 * multiplier,
-      saturation: 2.6 * multiplier
+      wiltingpoint: Math.round(0.4 * multiplier) / rounder,
+      prewiltingpoint: Math.round(0.64 * multiplier) / rounder,
+      stressthreshold: Math.round(0.8 * multiplier) / rounder,
+      fieldcapacity: Math.round(1.2 * multiplier) / rounder,
+      saturation: Math.round(2.6 * multiplier) / rounder
     },
     medium: {
-      wiltingpoint: 0.6 * multiplier,
-      prewiltingpoint: 0.945 * multiplier,
-      stressthreshold: 1.175 * multiplier,
-      fieldcapacity: 1.75 * multiplier,
-      saturation: 2.9 * multiplier
+      wiltingpoint: Math.round(0.6 * multiplier) / rounder,
+      prewiltingpoint: Math.round(0.945 * multiplier) / rounder,
+      stressthreshold: Math.round(1.175 * multiplier) / rounder,
+      fieldcapacity: Math.round(1.75 * multiplier) / rounder,
+      saturation: Math.round(2.9 * multiplier) / rounder
     },
     high: {
-      wiltingpoint: 0.85 * multiplier,
-      prewiltingpoint: 1.30 * multiplier,
-      stressthreshold: 1.6 * multiplier,
-      fieldcapacity: 2.35 * multiplier,
-      saturation: 3.25 * multiplier
+      wiltingpoint: Math.round(0.85 * multiplier) / rounder,
+      prewiltingpoint: Math.round(1.30 * multiplier) / rounder,
+      stressthreshold: Math.round(1.6 * multiplier) / rounder,
+      fieldcapacity: Math.round(2.35 * multiplier) / rounder,
+      saturation: Math.round(3.25 * multiplier) / rounder
     },
-    kc: 1.0,
-    p: 0.5
+    kc: {
+      Lini: {
+        name: 'Initial Growth Stage Length',
+        value: 30,
+        description: 'length (days) of initial growth stage'
+      },
+      Ldev: {
+        name: 'Development Growth Stage Length',
+        value: 40,
+        description: 'length (days) of development growth stage'
+      },
+      Lmid: {
+        name: 'Mature Growth Stage Length',
+        value: 80,
+        description: 'length (days) of middle (mature) growth stage'
+      },
+      Llate: {
+        name: 'Late Growth Stage Length',
+        value: 30,
+        description: 'length (days) of late growth stage'
+      },
+      Kcini: {
+        name: 'Initial Growth Stage Crop Coefficient',
+        value: 0.60,
+        description: 'crop coefficient for initial growth stage'
+      },
+      Kcmid: {
+        name: 'Mature Growth Stage Crop Coefficient',
+        value: 1.15,
+        description: 'crop coefficient for middle (mature) growth stage'
+      },
+      Kcend: {
+        name: 'End of Season Crop Coefficient',
+        value: 0.80,
+        description: 'crop coefficient at end of growing season'
+      }
+    },
+    p: 0.5,
+    petAdj: 0.55
   },
   soildrainageoptions: {
     low: { daysToDrainToFcFromSat: 0.125 },
@@ -47,6 +86,56 @@ export const SOIL_DATA = {
     high: { daysToDrainToFcFromSat: 2.0 },
   }
 };
+
+function getSingleCropCoeff(numdays) {
+  // -----------------------------------------------------------------------------------------
+  // Calculate crop coefficient for a specific growth stage of plant.
+  // - Coefficients for initial, middle and end growth stages are assigned directly.
+  // - Coefficients for development and late growth stages are determined by linear interpolation between coefficients for surrounding stages.
+  // Refer to FAO-56 single crop coefficient reference, along with other sources for values specific for the Northeast US.
+  //
+  // numdays : days since planting, used to estimate the growth stage.
+  // Lini  : length (days) of initial growth stage
+  // Ldev  : length (days) of development growth stage
+  // Lmid  : length (days) of middle (mature) growth stage
+  // Llate : length (days) of late growth stage
+  // Kcini : crop coefficient for initial growth stage
+  // Kcmid : crop coefficient for middle (mature) growth stage
+  // Kcend : crop coefficient at end of growing season
+  // Kc    : crop coefficient for this specific growth stage - we use Kc to adjust grass reference ET
+  // -----------------------------------------------------------------------------------------
+  const {
+    Lini,
+    Ldev,
+    Lmid,
+    Llate,
+    Kcini,
+    Kcmid,
+    Kcend
+  } = SOIL_DATA.soilmoistureoptions.kc;
+  let Kc = null;
+
+  if (numdays <= Lini.value) {
+      // before planting or in initial growth stage
+      Kc = Kcini.value
+  } else if ((numdays > Lini.value) && (numdays < (Lini.value+Ldev.value))) {
+      // in development growth stage
+      // linearly interpolate between Kcini and Kcmid to find Kc within development stage
+      Kc = Kcini.value + (numdays-Lini.value)*(Kcmid.value-Kcini.value)/Ldev.value
+  } else if ((numdays >= (Lini.value+Ldev.value)) && (numdays <= (Lini.value+Ldev.value+Lmid.value))) {
+      // in middle (mature) growth stage
+      Kc = Kcmid.value
+  } else if ((numdays > (Lini.value+Ldev.value+Lmid.value)) && (numdays < (Lini.value+Ldev.value+Lmid.value+Llate.value))) {
+      // in late growth stage
+      // linearly interpolate between Kcmid and Kcend to find Kc within late growth stage
+      Kc = Kcmid.value - (numdays-(Lini.value+Ldev.value+Lmid.value))*(Kcmid.value-Kcend.value)/Llate.value
+  } else {
+      // at end of growing season
+      Kc = Kcend.value
+  }
+
+  return Kc
+}
 
 // Derived from Brian's csf-waterdef code
 function getPotentialDailyDrainage(soilCharacteristics: SoilCharacteristics, drainagecap: number): number {
@@ -84,10 +173,11 @@ function getWaterStressCoeff(Dr: number, TAW: number, p: number): number {
   return Ks;
 }
 
-export function runWaterDeficitModel(
+function runWaterDeficitModel(
   precip: number[],
   pet: number[],
   soilcap: SoilMoistureOptionLevel,
+  plantingDate: Date,
   irrigationIdxs: number[],
   initDeficit: number
 ) {
@@ -105,9 +195,9 @@ export function runWaterDeficitModel(
   //  precip         : daily precipitation array (in) : (NRCC ACIS grid 3)
   //  pet            : daily potential evapotranspiration array (in) : (grass reference PET obtained from NRCC MORECS model output)
   //  soilcap        : soil water capacity ('high','medium','low')
+  //  plantingDate : date crop was planted
   //  irrigationIdxs : array of indices where the user irrigated
   //  initDeficit    : water deficit used to initialize the model
-  //  retunType      : type of model to run ('actual', 'avoidPlantStress', 'avoidDormancy)
   //
   // -----------------------------------------------------------------------------------------
 
@@ -117,6 +207,8 @@ export function runWaterDeficitModel(
   let TAW: number | null = null;
   // water stress coefficient
   let Ks: number | null = null;
+  let Kc: number | null = null;
+  let daysSincePlanting =  Math.floor(( Date.parse(plantingDate.getFullYear() + '-03-01') - plantingDate.getTime() ) / 86400000);
 
   // values of model components for a single day
   let totalDailyPrecip: number | null = null;
@@ -154,9 +246,10 @@ export function runWaterDeficitModel(
     // Calculate Ks, the water stress coefficient, using antecedent deficit
     TAW = getTawForPlant(soil_options[soilcap]);
     Ks = getWaterStressCoeff(deficitDaily[idx - 1], TAW, soil_options.p);
+    Kc = getSingleCropCoeff(daysSincePlanting);
 
     // We already know what the daily total is for Precip and ET
-    totalDailyPET = -1 * pet[idx] * soil_options.kc * Ks;
+    totalDailyPET = -1 * pet[idx] * Kc * Ks;
     totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
 
     // Convert daily rates to hourly rates. For this simple model, rates are constant throughout the day.
@@ -202,7 +295,23 @@ export function runWaterDeficitModel(
 
   return {
     vwc: vwcDaily,
-    deficitsInches: deficitDaily,
-    soilOptions: soil_options[soilcap]
+    deficitsInches: deficitDaily
   };
+}
+
+export const handleRunWDM = (devOptions, userOptions, waterData) => {
+  if (devOptions && userOptions && waterData) {
+    console.log('HANDLERUNWDM START');
+    console.log(devOptions);
+    console.log(userOptions);
+    console.log(waterData);
+    console.log('HANDLERUNWDM END');
+    // const { waterCapacity } = soilCharacteristics;
+    // const { dates, pet, precip } = waterData;
+    // return {
+    //   ...runWaterDeficitModel(precip, pet, waterCapacity, new Date(2023, 5, 1), [], 0),
+    //   dates
+    // };
+  }
+  return null;
 }

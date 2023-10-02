@@ -1,10 +1,11 @@
 <script lang="ts">
 	import LocationPicker from "./components/locationPicker/LocationPicker.svelte";
   import ToolOptions from "./components/options/ToolOptions.svelte";
-	import { soilCharacteristics, waterData } from "./store/store";
+	import { soilCharacteristics, waterData, wdmOutput } from "./store/store";
 
-	$: console.log($soilCharacteristics);
-	$: console.log($waterData);
+	$: console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
+	$: console.log('APP WATERDATA: ', $waterData);
+	$: console.log('APP WDMOUTPUT: ', $wdmOutput);
 </script>
 
 <main>

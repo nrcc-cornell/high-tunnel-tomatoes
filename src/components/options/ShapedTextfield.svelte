@@ -1,45 +1,58 @@
 <script lang="ts">
+  import Textfield from '@smui/textfield';
+  import HelperText from '@smui/textfield/helper-text';
+
   export let value;
-  export let invalid = false;
-  export let label = '';
   export let helperText = '';
-  export let suffix = '';
-  export let inputPattern = '';
+  export let helperProps = {};
+  export let width = 215;
+  export let highlight = false;
 </script>
-<!-- <Textfield
-      class="shaped-outlined"
-      variant="outlined"
-      invalid
-      bind:value={valueD}
-      label="Invalid"
-      >
-      <HelperText slot="helper">Helper Text</HelperText>
-    </Textfield> -->
 
-<!-- <Textfield
-  class="shaped-outlined"
-  variant="outlined"
-  bind:value={value}
-  invalid={invalid}
-  label={label}
-  suffix={suffix}
-  input$pattern={inputPattern}
->
-  {#if helperText}
-    <HelperText slot="helper">{helperText}</HelperText>
-  {/if}
-</Textfield> -->
-
-<!-- <Textfield
-  variant="outlined"
-  bind:value={value}
-  label={label}
->
-  {#if helperText}
-    <HelperText slot="helper">{helperText}</HelperText>
-  {/if}
-</Textfield> -->
+<div style='width: {width}px; margin-top: 6px;'>
+  <Textfield
+    class="shaped-outlined{highlight ? ' highlighted' : ''}"
+    variant="outlined"
+    bind:value={value}
+    {...$$restProps}
+  >
+    <HelperText style='width: {width}px;' {...helperProps} slot="helper">{helperText}</HelperText>
+  </Textfield>
+</div>
 
 <style>
+  * :global(.shaped-outlined .mdc-notched-outline .mdc-notched-outline__leading) {
+    border-radius: 28px 0 0 28px;
+    width: 28px;
+  }
+  * :global(.shaped-outlined .mdc-notched-outline .mdc-notched-outline__trailing) {
+    border-radius: 0 28px 28px 0;
+  }
+  * :global(.shaped-outlined .mdc-notched-outline .mdc-notched-outline__notch) {
+    max-width: calc(100% - 28px * 2);
+  }
 
+  * :global(.highlighted .mdc-notched-outline .mdc-notched-outline__leading) {
+    border-color: #40B3FF;
+  }
+  * :global(.highlighted .mdc-notched-outline .mdc-notched-outline__trailing) {
+    border-color: #40B3FF;
+  }
+  * :global(.highlighted .mdc-notched-outline .mdc-notched-outline__notch) {
+    border-color: #40B3FF;
+  }
+  * :global(.highlighted .mdc-notched-outline .mdc-notched-outline__notch span) {
+    color: #40B3FF;
+  }
+
+  * :global(.shaped-outlined.mdc-text-field--with-leading-icon:not(.mdc-text-field--label-floating) .mdc-floating-label) {
+    left: 16px;
+  }
+  * :global(.shaped-outlined + .mdc-text-field-helper-line) {
+    padding-left: 16px;
+    padding-right: 12px;
+  }
+  * :global(.shaped-outlined .mdc-text-field__input) {
+    padding-left: 15px;
+  }
 </style>

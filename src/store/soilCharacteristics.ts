@@ -166,8 +166,8 @@ export async function getSoilCharacteristics(activeLocation) {
   const [ avgClay, avgSand, avgSilt, avgOM, avgBD ] = calcAvgSoilComp(soilTypes);
   return {
     waterCapacity: categorizeTexture(avgClay, avgSand, avgSilt),
-    composition: { clay: avgClay, sand: avgSand, silt: avgSilt },
-    organicMatter: avgOM,
+    composition: { clay: Math.round(avgClay), sand: Math.round(avgSand), silt: Math.round(avgSilt) },
+    organicMatter: Math.round(avgOM),
     bulkDensity: avgBD
   };
 }
