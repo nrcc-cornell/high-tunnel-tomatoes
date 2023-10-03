@@ -1,9 +1,9 @@
-import { writable, derived, readable } from 'svelte/store';
-import type { Writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 import asyncDerived from './asyncDerived';
 import { getSoilCharacteristics } from './soilCharacteristics';
 import { getWaterData } from './waterData';
-import { handleRunWDM, SOIL_DATA } from './waterDeficitModel';
+import { handleRunWDM, SOIL_DATA } from './devWaterDeficitModel';
+import { constructAnnotations, calcPointColors } from './chartParts';
 
 const today = new Date().toISOString().slice(0,10);
 
@@ -13,6 +13,7 @@ export const isLoadingLocation = writable(false);
 
 export const waterData = asyncDerived(activeLocation, (loc) => getWaterData(loc, today), null);
 
+export const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA)));
 export let userOptions = writable(null);
 export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLocation) => {
   const newSC = await getSoilCharacteristics($activeLocation);
@@ -24,30 +25,31 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
   return newSC;
 }, null);
 
-export const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA)));
+export const wdmOutput = derived([devOptions, userOptions, waterData], ([$devOptions, $userOptions, $waterData]) => {
+  if ($devOptions && $userOptions && $waterData) {
+    const wdmRes = handleRunWDM($devOptions, $userOptions, $waterData);
+    const finalValue = wdmRes.deficitsInches.slice(-1)[0];
 
-export const wdmOutput = derived([devOptions, userOptions, waterData], ([$devOptions, $userOptions, $waterData]) => handleRunWDM($devOptions, $userOptions, $waterData), null);
+    const {
+      prewiltingpoint,
+      stressthreshold,
+      fieldcapacity,
+      saturation
+    } = $devOptions.soilmoistureoptions[$userOptions.waterCapacity];
+  
+    const thresholds = [
+      prewiltingpoint - fieldcapacity,
+      stressthreshold - fieldcapacity,
+      fieldcapacity - fieldcapacity,
+      saturation - fieldcapacity
+    ];
 
-
-
-
-
-// import default values
-// store as orig object in a readable
-// store copy as user defined object
-// use the user one as the values and changable in the options component
-
-
-
-
-
-
-
-
-
-
-
-
+    const annotations = constructAnnotations(thresholds, finalValue);
+    const deficitsInchesPntColors = calcPointColors(wdmRes.deficitsInches, thresholds);
+    return { ...wdmRes, deficitsInchesPntColors, annotations };
+  }
+  return null;
+}, null);
 
 
 // Spinner colors:

@@ -103,7 +103,7 @@
 			})
 			.then(responseJson =>{
 				if (Object.keys(ALLOWED_STATES).includes(responseJson.address.state)) {
-					handleAddLocation(responseJson.display_name, parseFloat(responseJson.lat), parseFloat(responseJson.lon));
+					handleAddLocation(responseJson.display_name, e.latlng.lat, e.latlng.lng);
 				} else {
 					badMessage = 'Selected location was out of bounds. Please select a location within the outlined states.';
 				}

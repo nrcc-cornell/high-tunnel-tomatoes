@@ -30,6 +30,7 @@ function noNulls<TValue>(value: (TValue | null)[]): value is TValue[] {
 
 class SoilType {
   columnDepthCm = 45;
+  // columnDepthCm = 30;
   name: string;
   areaWeight: number;
   horizons: SoilHorizonData[];
@@ -85,6 +86,7 @@ const fetchSoilColumnDataViaPostRest = (lngLat: [number, number]) => {
     LEFT OUTER JOIN component AS c ON mu.mukey = c.mukey
     INNER JOIN chorizon AS ch ON c.cokey = ch.cokey
     WHERE mu.mukey IN (SELECT * from SDA_Get_Mukey_from_intersection_with_WktWgs84('point (${lngLat.join(' ')})')) AND hzdept_r <= 45`;
+    // WHERE mu.mukey IN (SELECT * from SDA_Get_Mukey_from_intersection_with_WktWgs84('point (${lngLat.join(' ')})')) AND hzdept_r <= 30`;
 
   return fetch(
     'https://sdmdataaccess.sc.egov.usda.gov/tabular/post.rest',
@@ -162,6 +164,7 @@ const categorizeTexture = (clay: number, sand: number, silt: number): SoilMoistu
 export async function getSoilCharacteristics(activeLocation) {
   if (!activeLocation) return null;
   const soilColumnData = await fetchSoilColumnDataViaPostRest([activeLocation.lon, activeLocation.lat]);
+  if (!soilColumnData) return null;
   const soilTypes = convertIntoSoilTypes(soilColumnData);
   const [ avgClay, avgSand, avgSilt, avgOM, avgBD ] = calcAvgSoilComp(soilTypes);
   return {

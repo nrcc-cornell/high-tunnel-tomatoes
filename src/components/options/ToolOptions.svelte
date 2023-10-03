@@ -5,12 +5,8 @@
   import { devOptions, userOptions, soilCharacteristics } from "../../store/store";
   import Button from "../Button.svelte";
 
-  $: console.log('DEV OPTIONS CHANGED TO: ', $devOptions);
-  $: console.log('USER OPTIONS CHANGED TO: ', $userOptions);
-
   let localDevOptions = null;
   let localUserOptions = null;
-  
 
   const updateLocalDevOptions = () => {
     localDevOptions = JSON.parse(JSON.stringify($devOptions));
@@ -23,38 +19,18 @@
   $: $userOptions, updateLocalUserOptions();
 
   function handleUpdateOptions() {
-    console.log('fired update');
-    console.log(localDevOptions);
-    console.log($devOptions);
-    console.log(localUserOptions);
-    console.log($userOptions);
-    console.log(JSON.stringify(localDevOptions) === JSON.stringify($devOptions));
-    console.log(JSON.stringify(localUserOptions) === JSON.stringify($userOptions));
     $userOptions = localUserOptions;
     $devOptions = localDevOptions;
   }
 
-
-  // Pump everything into water deficit model
-  // Make graph to show output
-  // Make sure everything works correctly
-  // Remove unneccessary comments and update todo doc
-
-  // set up loading screen when initializing
-  // make sure loading is displayed when an options change or location change occurs until the data is ready for display
-  
-  // work on fertilization events
-  // work on nitrogen stuff
-
-
   const waterCapacityOptions = [{
-    name: 'Clay, fine texture',
+    name: 'Sand, coarse texture',
     value: 'low'
   },{
     name: 'Loam, medium texture',
     value: 'medium'
   },{
-    name: 'Sand, coarse texture',
+    name: 'Clay, fine texture',
     value: 'high'
   }]
 </script>
@@ -67,7 +43,7 @@
           bind:value={localUserOptions.waterCapacity}
           highlight={localUserOptions.waterCapacity !== $userOptions.waterCapacity}
           label='Soil Type'
-          helperText='{$soilCharacteristics.waterCapacity.slice(0,1).toUpperCase() + $soilCharacteristics.waterCapacity.slice(1)} is recommended: Sand-{$soilCharacteristics.composition.sand}% Silt-{$soilCharacteristics.composition.silt}% Clay-{$soilCharacteristics.composition.clay}%'
+          helperText='"{waterCapacityOptions.find(wco => wco.value === $soilCharacteristics.waterCapacity).name}" is recommended: Sand-{$soilCharacteristics.composition.sand}% Silt-{$soilCharacteristics.composition.silt}% Clay-{$soilCharacteristics.composition.clay}%'
           options={waterCapacityOptions}
         />
         <ShapedTextfield
@@ -105,12 +81,12 @@
       <div>
         <h4>Soil Moisture Definitions (inches)</h4>
         <div class='smo-grid'>
-          {#each ['header', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}
-            {#each ['capacity', 'low', 'medium', 'high'] as col (`${col}-${row}`)}
-              {#if row === 'header'}
-                <div class={col === $userOptions.waterCapacity ? 'header highlighted' : 'header'}>{col}</div>
-              {:else if col === 'capacity'}
-                <div class='header' style='height: 27px;'>{row}</div>
+          {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}
+            {#each ['constName', 'low', 'medium', 'high'] as col (`${col}-${row}`)}
+              {#if col === 'constName'}
+                <div class='header' style='height: 24px;'>{row}</div>
+              {:else if row === ''}
+                <div class={col === $userOptions.waterCapacity ? 'header highlighted' : 'header'}>{waterCapacityOptions.find(wco => wco.value === col).name}</div>
               {:else}
                 <div class={col === $userOptions.waterCapacity ? 'highlighted' : ''}>
                   <ShapedTextfield
@@ -205,16 +181,17 @@
 
   .smo-grid {
     grid-template-columns: 120px repeat(3, 123px);
-    grid-template-rows: 27px repeat(5, 68px);
+    grid-template-rows: 38px repeat(5, 68px);
     margin: 0 auto;
     width: fit-content;
 
     .highlighted {
-      background-color: rgba(0,0,0,0.04);
+      background-color: rgb(255, 219, 198);
     }
 
     .header {
       font-weight: bold;
+      font-size: 12px;
     }
   }
 

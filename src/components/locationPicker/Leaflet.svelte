@@ -37,22 +37,7 @@
 			}
 		}).addTo(leafMap);
 
-
-
-		// change this to a input field
-		// on submit (or enter):
-		// // set loading
-		// // query the geosearch EP
-		// // get results:
-		// // // if valid result:
-		// // // // set it to active
-		// // // // add it to list
-		// // // // close modal
-		// // // else:
-		// // // // show badMessage
-
 		const provider = new OpenStreetMapProvider();
-		// leafMap.addControl(GeoSearchControl({ provider, style: 'bar', notFoundMessage: 'Sorry, that address could not be found.' }));
 		const form = document.querySelector('form');
 		const input: HTMLInputElement = form.querySelector('input[type="text"]');
 		form.addEventListener('submit', (e) => handleSearch(e, input, provider));
