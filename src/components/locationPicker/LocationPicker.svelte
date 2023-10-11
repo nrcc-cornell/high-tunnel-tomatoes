@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { activeLocation, locations, isLoadingLocation } from "../../store/store";
+	import { activeLocation, activeLocationId, locations, isLoadingLocation } from "../../store/store";
 	import { onMount } from "svelte";
 
 	import Leaflet from './Leaflet.svelte';
@@ -10,18 +10,19 @@
   import Button from "../Button.svelte";
 	import Loading from "../Loading.svelte";
 
-	import { loadLocations, addLocationToStorage, removeLocationFromStorage, updateActiveLocationInStorage } from "./handleStorage";
+	import { addLocationToStorage, removeLocationFromStorage, updateActiveLocationIdInStorage } from "../../lib/handleStorage";
+  import Modal from "../Modal.svelte";
 	
-	onMount(() => {
-		const { storedLocations, storedActiveLocation } = loadLocations();
-		if (storedLocations && storedActiveLocation) {
-			$locations = storedLocations;
-			$activeLocation = storedActiveLocation;
-		} else {
+	let badMessage = '';
+	let modalOpen = false;
+	let modalLocked = false;
+	function checkLocations() {
+		if (!$activeLocation || !$locations) {
 			modalOpen = true;
 			modalLocked = true;
 		}
-	})
+	}
+	$: $activeLocation, $locations, checkLocations();
 
 	const isNum = (val) => new RegExp('^[0-9]+$').test(val);
 	function parseAddress(address) {
@@ -79,7 +80,7 @@
 			const newLocs = addLocationToStorage($locations, newLoc);
 			if (newLocs) {
 				$locations = newLocs;
-				$activeLocation = updateActiveLocationInStorage(newLoc);
+				$activeLocationId = updateActiveLocationIdInStorage(newLoc.id);
 				toggleModal(true);
 				badMessage = '';
 			} else {
@@ -140,23 +141,23 @@
 		$isLoadingLocation = false;
 	}
 
-	function handleMarkerClick(changeToLoc) {
-		if (changeToLoc.id !== $activeLocation.id) {
-			$activeLocation = updateActiveLocationInStorage(changeToLoc);
+	function handleMarkerClick(changeToId) {
+		if (changeToId !== $activeLocationId) {
+			$activeLocationId = updateActiveLocationIdInStorage(changeToId);
 			toggleModal(true);
 			badMessage = '';
 		}
 	}
 
-	function handleMarkerRemove(removeLoc) {
-		if (removeLoc.id !== $activeLocation.id) {
-			const newLocs = removeLocationFromStorage($locations, removeLoc);
+	function handleMarkerRemove(removeId) {
+		if (removeId !== $activeLocationId) {
+			const newLocs = removeLocationFromStorage($locations, removeId);
 			$locations = newLocs;
 			badMessage = '';
 		}
 	}
 
-	function toggleModal(unlockModal=false) {
+  function toggleModal(unlockModal=false) {
 		if (unlockModal) {
 			modalLocked = false;
 		}
@@ -165,64 +166,51 @@
 			modalOpen = !modalOpen;
 		}
 	}
-
-	function handleEsc(e) {
-		if (e.keyCode === 27 && modalOpen) {
-			toggleModal();
-		}
-	}
-
-	let badMessage = '';
-	let modalOpen = false;
-	let modalLocked = false;
 </script>
 
 <div class="location-picker-display">
 	<h3 class="location-picker-address">{$activeLocation?.shortAddress}</h3>
 	<Button onClick={toggleModal}>Change Location</Button>
 </div>
-
-{#if modalOpen}
-	<div class="location-picker-modal" on:click={() => toggleModal()} on:keydown={handleEsc}>
-		<div class="location-picker-modal-content" on:click|stopPropagation on:keydown={handleEsc}>
-			<Leaflet
-				locations={$locations}
-				bounds={$locations ? undefined : [[37.20, -82.70], [47.60, -66.90]]}
-				{handleMapClick}
-				{handleSearch}
-			>
-				{#if $locations}
-					{#each $locations as loc (loc.id)}
-						<Marker
-							latLng={[loc.lat, loc.lon]}
-							width={15}
-							height={30}
-							handleMarkerClick={() => handleMarkerClick(loc)}
-							handleMarkerContextMenu={() => handleMarkerRemove(loc)}
-						>
-							{#if loc.id === $activeLocation.id}
-								<RedPin />
-								<Tooltip isActive={true}>{loc.fullAddress}</Tooltip>
-							{:else}
-								<BluePin />
-								<Tooltip>{loc.fullAddress}</Tooltip>
-							{/if}
-						</Marker>
-					{/each}
-				{/if}
-			</Leaflet>
-			{#if modalLocked && modalOpen}
-				<div class='message'><p>Select your high tunnel location to get started</p></div>
+<Modal open={modalOpen} handleClose={toggleModal}>
+	<div class="location-picker-modal-content">
+		<Leaflet
+			locations={$locations}
+			bounds={$locations ? undefined : [[37.20, -82.70], [47.60, -66.90]]}
+			{handleMapClick}
+			{handleSearch}
+		>
+			{#if $locations}
+				{#each Object.values($locations) as loc (loc.id)}
+					<Marker
+						latLng={[loc.lat, loc.lon]}
+						width={15}
+						height={30}
+						handleMarkerClick={() => handleMarkerClick(loc.id)}
+						handleMarkerContextMenu={() => handleMarkerRemove(loc.id)}
+					>
+						{#if loc.id === $activeLocation.id}
+							<RedPin />
+							<Tooltip isActive={true}>{loc.fullAddress}</Tooltip>
+						{:else}
+							<BluePin />
+							<Tooltip>{loc.fullAddress}</Tooltip>
+						{/if}
+					</Marker>
+				{/each}
 			{/if}
-			{#if badMessage}
-				<div class='message'><p>{badMessage}</p></div>
-			{/if}
-			{#if $isLoadingLocation}
-				<Loading />
-			{/if}
-		</div>
+		</Leaflet>
+		{#if modalLocked && modalOpen}
+			<div class='message'><p>Select your high tunnel location to get started</p></div>
+		{/if}
+		{#if badMessage}
+			<div class='message'><p>{badMessage}</p></div>
+		{/if}
+		{#if $isLoadingLocation}
+			<Loading position='absolute'/>
+		{/if}
 	</div>
-{/if}
+</Modal>
 
 <style>
 	.location-picker-display {
@@ -236,25 +224,11 @@
 		color: #595959;
 	}
 
-	.location-picker-modal {
-		position: fixed;
-		top: 0;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		background-color: rgba(150,150,150,0.7);
-		z-index: 100;
-	}
-	
 	.location-picker-modal-content {
-		position: relative;
-		width: 90%;
+		width: 90vw;
 		min-width: 300px;
 		max-width: 1000px;
-		height: 90%;
+		height: 90vh;
 		min-height: 400px;
 		max-height: 800px;
 	}

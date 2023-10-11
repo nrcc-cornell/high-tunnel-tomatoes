@@ -5,7 +5,11 @@ const BAND_COLORS = [
   '0,128,0'
 ];
 
-export function constructAnnotations(thresholds, finalValue) {
+// export function constructNitrogenChartAnnotations(thresholds, finalValue, ) {
+
+// }
+
+export function constructWaterChartAnnotations(thresholds, finalValue) {
   const finalValueIsIn = thresholds.findIndex((t,i) => {
     if (finalValue < t) {
       return true;
@@ -31,13 +35,13 @@ export function constructAnnotations(thresholds, finalValue) {
     backgroundColor: `rgba(${BAND_COLORS[1]},0.1)`,
     label: 'Deficit, plant stress likely'
   },{
-    yMax: 0,
+    yMax: thresholds[2],
     yMin: thresholds[1],
     backgroundColor: `rgba(${BAND_COLORS[2]},0.1)`,
     label: 'Deficit, no plant stress'
   },{
     yMax: undefined,
-    yMin: 0,
+    yMin: thresholds[2],
     backgroundColor: `rgba(${BAND_COLORS[3]},0.1)`,
     label: 'No deficit for plant'
   }];
@@ -46,7 +50,9 @@ export function constructAnnotations(thresholds, finalValue) {
     drawTime: 'beforeDraw',
     borderWidth: 0,
     adjustScaleRange: false,
-    ...pb,
+    yMax: pb.yMax,
+    yMin: pb.yMin,
+    backgroundColor: i === finalValueIsIn ? pb.backgroundColor : 'transparent',
     label: {
       content: pb.label,
       drawTime: 'beforeDraw',
@@ -100,6 +106,30 @@ export function constructAnnotations(thresholds, finalValue) {
     },
   });
 
+  // irrigationIdxs.forEach(idx => annotations.annotations['irri' + idx] = {
+  //   type: 'line',
+  //   drawTime: 'beforeDraw',
+  //   borderWidth: 1,
+  //   borderColor: 'rgb(150,150,250)',
+  //   adjustScaleRange: false,
+  //   xMin: idx,
+  //   xMax: idx,
+  //   label: {
+  //     content: 'Irrigation',
+  //     drawTime: 'beforeDraw',
+  //     color: 'rgb(120,120,220)',
+  //     display: true,
+  //     position: 'start',
+  //     yAdjust: 10,
+  //     xAdjust: 3,
+  //     rotation: 90,
+  //     font: {
+  //       size: '10px'
+  //     },
+  //     backgroundColor: 'transparent'
+  //   }
+  // });
+
   return annotations;
 }
 
@@ -111,4 +141,17 @@ export function calcPointColors(pnts, thresholds) {
       }
     }
   });
+}
+
+export function calcPointBorders(eventsObj, datesArr) {
+  const eventDates = Object.values(eventsObj).map((obj: {date:string}) => obj.date);
+  
+  const borderColors = [];
+  const borderWidths = [];
+  for (let i = 0; i < datesArr.length; i++) {
+    const irrigated = eventDates.includes(datesArr[i]);
+    borderColors.push(irrigated ? 'rgb(71, 150, 255)' : 'rgb(0,0,0)');
+    borderWidths.push(irrigated ? 2 : 1);
+  }
+  return { borderColors, borderWidths};
 }

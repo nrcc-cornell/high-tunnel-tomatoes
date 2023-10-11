@@ -11,7 +11,7 @@
 	export let bounds: L.LatLngBoundsExpression | undefined = undefined;
 	export let view: L.LatLngExpression | undefined = undefined;
 	export let zoom: number | undefined = undefined;
-	export let locations: LocationObj[] | null = null;
+	export let locations: { [key:string]: LocationObj } | null = null;
 	export let handleMapClick = (e) => null;
 	export let handleSearch = (event, inputEl, provider) => null;
 
@@ -49,7 +49,7 @@
 		} else if (view && zoom) {
 			leafMap.setView(view, zoom);
 		} else if (locations) {
-			const boundsObj = locations.reduce((acc, loc) => {
+			const boundsObj = Object.values(locations).reduce((acc, loc) => {
 				if (loc.lat < acc.ll.lat) acc.ll.lat = loc.lat;
 				if (loc.lon < acc.ll.lon) acc.ll.lon = loc.lon;
 				if (loc.lat > acc.ur.lat) acc.ur.lat = loc.lat;

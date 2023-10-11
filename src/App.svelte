@@ -1,69 +1,40 @@
 <script lang="ts">
 	import LineChart from "./components/LineChart.svelte";
+  import LineCharts from "./components/LineCharts.svelte";
+  import Loading from "./components/Loading.svelte";
 	import LocationPicker from "./components/locationPicker/LocationPicker.svelte";
   import ToolOptions from "./components/options/ToolOptions.svelte";
-	import { soilCharacteristics, waterData, wdmOutput } from "./store/store";
+	import { soilCharacteristics, waterData, nutrientData, isLoadingData } from "./store/store";
 
 	$: console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
 	$: console.log('APP WATERDATA: ', $waterData);
-	$: console.log('APP WDMOUTPUT: ', $wdmOutput);
+	$: console.log('APP NUTRIENTDATA: ', $nutrientData);
+	$: console.log('APP ISLOADINGDATA: ', JSON.stringify($isLoadingData, null, 2));
 
 
 
-
-	// no forecast because locHourly doesnt give daily precip...can get from runoff risk if necessary
-
-
-
-	// handle when no soil data
-	// handle out of season
-
-	// Need input for planting date
-
-  // Remove unneccessary comments and update todo doc
-
-  // set up loading screen when initializing
-  // make sure loading is displayed when an options change or location change occurs until the data is ready for display
-  
-  // work on fertilization events
-  // work on nitrogen stuff
-
+	//// termination date selector, with checkbox saying 'Terminated?' for conditional display
+	//// show planting and termination dates on charts
+	//// initial zoom active
 
 
 
 </script>
 
 <main>
-	{#if $wdmOutput}
-		<LineChart
-			data={{
-				labels: $wdmOutput.dates.map(d => d.slice(5).replace('-','/')),
-				datasets: [{
-					label: 'Water Deficit',
-					data: $wdmOutput.deficitsInches,
-					pointBackgroundColor: $wdmOutput.deficitsInchesPntColors,
-					borderColor: 'rgb(0,0,0)',
-					borderWidth: 1
-				}]
-			}}
-			options={{
-				plugins: { 
-					annotation: $wdmOutput.annotations,
-				},
-				scales: {
-					y: {
-						title: { 
-							display: true,
-							text: 'Water Deficit (in/18in soil)'
-						},
-					}
-				}
-			}}
-		/>
-	{/if}
 	<h1>High Tunnel Tomatoes</h1>
+	
 	<LocationPicker />
 	<ToolOptions />
+	<LineCharts />
+
+	{#if Object.values($isLoadingData).includes(true)}
+		<Loading />
+	{:else if !$soilCharacteristics}
+		<div class='no-soil-data'>Soil data could not be loaded for this location. Please try a different location.</div>
+	{/if}
+
+
 </main>
 
 <style>
@@ -71,6 +42,8 @@
 		text-align: center;
 		padding: 1em;
 		margin: 0 auto;
+		min-width: 360px;
+		box-sizing: border-box;
 	}
 
 	h1 {
@@ -79,4 +52,45 @@
 		font-size: 4em;
 		font-weight: 100;
 	}
+
+	.no-soil-data {
+		font-style: italic;
+		font-size: 24px;
+		color: rgb(150,150,150);
+		margin-top: 30px;
+	}
+
+	:global(.scroll-shadows) {
+    overflow-y: auto;
+    border: 1px solid rgb(220,220,220);
+
+    background:
+      /* Shadow Cover TOP */
+      linear-gradient(
+        white 20%,
+        rgba(255, 255, 255, 0)
+      ) center top,
+      
+      /* Shadow Cover BOTTOM */
+      linear-gradient(
+        rgba(255, 255, 255, 0), 
+        white 80%
+      ) center bottom,
+      
+      /* Shadow TOP */
+      linear-gradient(
+        rgba(100, 100, 100, 0.3) 20%,
+        rgba(0, 0, 0, 0)
+      ) center top,
+      
+      /* Shadow BOTTOM */
+      linear-gradient(
+        rgba(0, 0, 0, 0) 20%,
+        rgba(100, 100, 100, 0.3)
+      ) center bottom;
+    
+    background-repeat: no-repeat;
+    background-size: 100% 40px, 100% 40px, 100% 14px, 100% 14px;
+    background-attachment: local, local, scroll, scroll;
+  }
 </style>

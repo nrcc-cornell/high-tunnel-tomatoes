@@ -1,14 +1,15 @@
 <script>
   import { Circle2 } from 'svelte-loading-spinners';
+
+  export let position = 'fixed';
 </script>
 
-<div class='loading-container'>
+<div class='loading-container' style='position: {position};'>
   <Circle2 />
 </div>
 
 <style>
   .loading-container {
-    position: absolute;
     top: 0;
     bottom: 0;
     left: 0;

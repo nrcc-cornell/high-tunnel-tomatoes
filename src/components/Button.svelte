@@ -1,11 +1,12 @@
 <script lang="ts">
   export let btnType = 'default';
   export let onClick = () => null;
+  export let hidden = false;
   export let disabled = false;
   export let disabledText = '';
 </script>
 
-<button on:click={onClick} class='btn-container btn-{btnType}{disabled ? ' disabled' : ''}' {...$$restProps} disabled={disabled}>
+<button on:click={onClick} class='btn-container btn-{btnType}{disabled ? ' disabled' : ''}{hidden ? ' hidden' : ' visible'}' {...$$restProps} disabled={disabled}>
   {#if disabled && disabledText}
     {disabledText}
   {:else}
@@ -30,7 +31,7 @@
     justify-content: center;
     white-space: nowrap;
     border-radius: 5px;
-    transition: all 0.5s ease-in;
+    transition: all 0.15s ease-in;
   }
 
   .btn-default {
@@ -44,7 +45,7 @@
     }
   }
 
-  .btn-submit {
+  .btn-orange {
     background-color: #FF3E00;
     color: white;
     border: 1px solid #FF3E00;
@@ -52,6 +53,58 @@
     &:hover {
       background-color: #fa6a3a;
       color: white;
+    }
+  }
+
+  .btn-green {
+    background-color: #01c71c;
+    color: white;
+    border: 1px solid #01c71c;
+    
+    &:hover {
+      background-color: #00a516;
+      color: white;
+    }
+  }
+
+  .btn-edit {
+    background-color: #3357EB;
+    color: white;
+    border: 1px solid #3357EB;
+    padding: 3px;
+    height: fit-content;
+    width: fit-content;
+    margin: 0;
+    
+    &:hover {
+      background-color: #0027c2;
+      color: rgb(230,230,230);
+    }
+  }
+
+  .btn-delete {
+    background-color: #eb3333;
+    color: white;
+    border: 1px solid #eb3333;
+    padding: 3px;
+    height: fit-content;
+    width: fit-content;
+    margin: 0;
+    
+    &:hover {
+      background-color: #bb0707;
+      color: rgb(230,230,230);
+    }
+  }
+
+  .btn-red {
+    background-color: #eb3333;
+    color: white;
+    border: 1px solid #eb3333;
+    
+    &:hover {
+      background-color: #bb0707;
+      color: rgb(230,230,230);
     }
   }
   
@@ -66,6 +119,14 @@
       color: rgb(120,120,120);
       cursor: auto;
     }
+  }
+
+  .hidden {
+    opacity: 0;
+  }
+
+  .visible {
+    opacity: 1;
   }
 
   @media (max-width: 785px), (max-height: 550px) {

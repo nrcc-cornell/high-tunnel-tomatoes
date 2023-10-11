@@ -1,3 +1,9 @@
+// ------------------------------------------ //
+// All derived from Brian's csf-waterdef code //
+// ------------------------------------------ //
+
+import balanceNitrogen from "./nitrogenModel";
+
 export enum SoilMoistureOptionLevel {
   LOW = 'low',
   MEDIUM = 'medium',
@@ -88,7 +94,7 @@ export const SOIL_DATA = {
   }
 };
 
-function getSingleCropCoeff(numdays, devSD) {
+function getCropCoeff(numdays, devSD) {
   // -----------------------------------------------------------------------------------------
   // Calculate crop coefficient for a specific growth stage of plant.
   // - Coefficients for initial, middle and end growth stages are assigned directly.
@@ -138,7 +144,6 @@ function getSingleCropCoeff(numdays, devSD) {
   return Kc
 }
 
-// Derived from Brian's csf-waterdef code
 function getPotentialDailyDrainage(soilCharacteristics: SoilCharacteristics, drainagecap: number): number {
   // -----------------------------------------------------------------------------------------
   // Calculate potential daily drainage of soil
@@ -174,144 +179,195 @@ function getWaterStressCoeff(Dr: number, TAW: number, p: number): number {
   return Ks;
 }
 
-function runWaterDeficitModel(
+function runNutrientModel(
   precip: number[],
   pet: number[],
   soilcap: SoilMoistureOptionLevel,
   plantingDate: Date,
-  irrigationIdxs: number[],
-  initDeficit: number,
+  initialOrganicMatter: number,
+  applications: { [key:string]: {
+    date: string,
+    id: number,
+    inorganicN: number,
+    fastN: number,
+    mediumN: number,
+    slowN: number,
+    waterAmount: number
+  }},
+  testResults: { [key:string]: {
+    date: string,
+    id: number,
+    organicMatter: number,
+    inorganicN: number
+  }},
+  dates: string[],
   devSD
 ) {
   // -----------------------------------------------------------------------------------------
-  // Calculate daily water deficit (inches) from daily precipitation, evapotranspiration, soil drainage and runoff.
+  // Calculate daily volumetric water content (inches H2O / inch soil) from daily precipitation, evapotranspiration, soil drainage and runoff.
   //
-  // The water deficit is calculated relative to field capacity (i.e. the amount of water available to the plant).
-  // Therefore, the water deficit is:
-  //    - zero when soil moisture is at field capacity
-  //    - a negative value when soil moisture is between field capacity and the wilting point
-  //    - a positive value when soil moisture is between field capacity and saturation
-  //    - bounded below by the wilting point ( = soil moisture at wilting point minus soil moisture at field capacity )
-  //    - bounded above by saturation ( = soil moisture at saturation minus soil moisture at field capacity)
+  // Soil water amount is:
+  //    - bounded below by the wilting point
+  //    - bounded above by saturation
   //
-  //  precip         : daily precipitation array (in) : (NRCC ACIS grid 3)
-  //  pet            : daily potential evapotranspiration array (in) : (grass reference PET obtained from NRCC MORECS model output)
-  //  soilcap        : soil water capacity ('high','medium','low')
-  //  plantingDate : date crop was planted
-  //  irrigationIdxs : array of indices where the user irrigated
-  //  initDeficit    : water deficit used to initialize the model
+  //  precip          : daily precipitation array (in) : (NRCC ACIS grid 3)
+  //  pet             : daily potential evapotranspiration array (in) : (grass reference PET obtained from NRCC MORECS model output)
+  //  soilcap         : soil water capacity ('high','medium','low')
+  //  plantingDate    : date crop was planted
+  //  irrigationIdxs  : array of indices where the user irrigated
   //
   // -----------------------------------------------------------------------------------------
-
   const soil_options = devSD.soilmoistureoptions;
   
-  // Total water available to plant
-  let TAW: number | null = null;
-  // water stress coefficient
-  let Ks: number | null = null;
-  let Kc: number | null = null;
+  // Calculate number of days since planting, negative value means current days in loop below is before planting
   let daysSincePlanting =  Math.floor(( Date.parse(plantingDate.getFullYear() + '-03-01') - plantingDate.getTime() ) / 86400000);
 
-  // values of model components for a single day
-  let totalDailyPrecip: number | null = null;
-  let totalDailyPET: number | null = null;
-  let dailyPotentialDrainageRate: number | null = null;
+  // Initialize running tally of the amount of water in the soil
+  let deficit = 0;
+  const fc = soil_options[soilcap].fieldcapacity;
 
-  // hourly rates of model components
-  let hourlyPrecip: number | null = null;
-  let hourlyPET: number | null = null;
-  let hourlyDrainage: number | null = null;
-  let hourlyPotentialDrainage: number | null = null;
+  // Initialize variables for storing nitrogen values between days
+  let tin = 0;
+  let som = initialOrganicMatter;
+  let fastN = 0;
+  let mediumN = 0;
+  let slowN = 0;
 
-  // OUTPUT VARS
-  // arrays holding daily values of model components
-  // deficitDaily is water deficit calculation we are looking for.
-  // Other variables are just for potential water balance verification, etc, if the user chooses.
-  const deficitDaily: number[] = [];
-  const vwcDaily: number[] = [];
-
-  // a running tally of the deficit
-  // Initialize deficit
-  //   : to zero if saturated soil after irrigation)
-  //   : to last observed deficit if running for forecasts
-  let deficit = initDeficit;
-
-  // the first elements in our output arrays. It include the water deficit initialization. Others will populate starting Day 2.
-  deficitDaily.push(deficit);
-  vwcDaily.push((soil_options[soilcap].fieldcapacity + deficit) / 18);
+  // Initialize output arrays
+  const vwcDaily = [(deficit + fc) / 18];
+  const dd = [deficit];
+  const tinDaily = [0];
+  const fastDaily = [0];
+  const mediumDaily = [0];
+  const slowDaily = [0];
 
   // Calculate daily drainage rate that occurs when soil water content is between saturation and field capacity
-  dailyPotentialDrainageRate = getPotentialDailyDrainage(soil_options[soilcap], devSD.soildrainageoptions[soilcap].daysToDrainToFcFromSat);
+  const dailyPotentialDrainageRate = getPotentialDailyDrainage(soil_options[soilcap], devSD.soildrainageoptions[soilcap].daysToDrainToFcFromSat);
 
-  // Loop through all days, starting with the second day (we already have the deficit for the initial day from model initialization)
+  // Loop through all days, starting with the second day (we already have the values for the initial day from model initialization)
   for (let idx = 1; idx < pet.length; idx++) {
-    // Calculate Ks, the water stress coefficient, using antecedent deficit
-    TAW = getTawForPlant(soil_options[soilcap]);
-    Ks = getWaterStressCoeff(deficitDaily[idx - 1], TAW, soil_options.p);
-    Kc = getSingleCropCoeff(daysSincePlanting, devSD);
+    const date = dates[idx];
+    daysSincePlanting += 1
 
-    // We already know what the daily total is for Precip and ET
-    totalDailyPET = -1 * pet[idx] * devSD.soilmoistureoptions.petAdj * Kc * Ks;
-    totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
+    // Calculate Ks, the water stress coefficient, using antecedent deficit
+    const TAW = getTawForPlant(soil_options[soilcap]);
+    const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
+    // Calculate Kc, the crop coefficient
+    const Kc = getCropCoeff(daysSincePlanting, devSD);
+
+    
+    // Adjust water movement to account for calculated and provided variables
+    const totalDailyPET = -1 * pet[idx] * devSD.soilmoistureoptions.petAdj * Kc * Ks;
+    
+
+    // const totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
+    let totalDailyPrecip = 0;
+    const todaysApplications = Object.values(applications).filter(obj => obj.date === date);
+    if (todaysApplications.length) {
+      todaysApplications.forEach(obj => {
+        totalDailyPrecip += obj.waterAmount;
+        fastN += obj.fastN;
+        mediumN += obj.mediumN;
+        slowN += obj.slowN;
+        tin += obj.inorganicN;
+      });
+    }
 
     // Convert daily rates to hourly rates. For this simple model, rates are constant throughout the day.
     // For precip   : this assumption is about all we can do without hourly observations
     // For PET      : this assumption isn't great. Something following diurnal cycle would be best.
     // For drainage : this assumption is okay
     // ALL HOURLY RATES POSITIVE
-    hourlyPrecip = totalDailyPrecip / 24;
-    hourlyPET = (-1 * totalDailyPET) / 24;
-    hourlyPotentialDrainage = dailyPotentialDrainageRate / 24;
+    const hourlyPrecip = totalDailyPrecip / 24;
+    const hourlyPET = (-1 * totalDailyPET) / 24;
+    const hourlyPotentialDrainage = dailyPotentialDrainageRate / 24;
+    
+    // Initialize daily drainage total for nitrogen calculations
+    let drainageTotal = 0;
 
     for (let hr = 1; hr <= 24; hr++) {
       // Calculate hourly drainage estimate. It is bounded by the potential drainage rate and available
       // water in excess of the field capacity. We assume drainage does not occur below field capacity.
+      let hourlyDrainage;
       if (deficit > 0) {
         hourlyDrainage = Math.min(deficit, hourlyPotentialDrainage);
       } else {
         hourlyDrainage = 0;
       }
+      drainageTotal += hourlyDrainage;
 
-      // Adjust deficit based on hourly water budget.
-      // deficit is bound by saturation (soil can't be super-saturated). This effectively reduces deficit by hourly runoff as well.
+      // Adjust soil water based on hourly water budget.
+      // soil water is bound by saturation (soil can't be super-saturated). This effectively reduces soil water by hourly runoff as well.
       deficit = Math.min(
         deficit + hourlyPrecip - hourlyPET - hourlyDrainage,
-        soil_options[soilcap].saturation -
-          soil_options[soilcap].fieldcapacity
+        soil_options[soilcap].saturation - fc
       );
 
-      // deficit is bound by wilting point, but calculations should never reach wilting point based on this model. We bound it below for completeness.
-      // In the real world, deficit is able to reach wilting point. The user should note that deficit values NEAR the wilting point
+      // soil water is bound by wilting point, but calculations should never reach wilting point based on this model. We bound it below for completeness.
+      // In the real world, soil water is able to reach wilting point. The user should note that soil water values NEAR the wilting point
       // from this model should be interpreted as 'danger of wilting exists'.
       deficit = Math.max(
         deficit,
-        -1 *
-          (soil_options[soilcap].fieldcapacity -
-            soil_options[soilcap].wiltingpoint)
+        soil_options[soilcap].wiltingpoint - fc
       );
     }
 
-    deficitDaily.push(deficit);
-    vwcDaily.push((soil_options[soilcap].fieldcapacity + deficit) / 18);
+    // Do something with drainageTotal and calculate tinDaily value
+    const todaysTests = Object.values(testResults).filter(obj => obj.date === date);
+    if (todaysTests.length) {
+      const lastTest = todaysTests[todaysTests.length - 1];
+      som = lastTest.organicMatter;
+      tin = lastTest.inorganicN;
+    }
+
+    const vwc = (deficit + fc) / 18;
+    const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
+    ({tin, som, fastN, mediumN, slowN} = balanceNitrogen(
+      vwc,
+      fc / 18,
+      mp,
+      drainageTotal,
+      daysSincePlanting >= 0,
+      -1 * totalDailyPET,
+      tin,
+      som,
+      fastN,
+      mediumN,
+      slowN
+    ));
+    
+    
+    dd.push(deficit);
+    vwcDaily.push(Math.round(vwc * 1000) / 1000);
+    tinDaily.push(Math.round((tin / 2) * 1000) / 1000);
+    fastDaily.push(Math.round((fastN / 2) * 1000) / 1000);
+    mediumDaily.push(Math.round((mediumN / 2) * 1000) / 1000);
+    slowDaily.push(Math.round((slowN / 2) * 1000) / 1000);
   }
 
   return {
-    vwc: vwcDaily.map(v => Math.round(v * 100) / 100),
-    deficitsInches: deficitDaily.map(v => Math.round(v * 100) / 100)
+    vwc: vwcDaily,
+    tin: tinDaily,
+    fastN: fastDaily,
+    mediumN: mediumDaily,
+    slowN: slowDaily,
+    dd
   };
 }
 
-export const handleRunWDM = (devOptions, userOptions, waterData) => {
-  const { waterCapacity } = userOptions;
+export const handleRunNutrientModel = (devOptions, userOptions, waterData) => {
+  const { waterCapacity, plantingDate, applications, testResults, initialOrganicMatter } = userOptions;
   const { dates, pet, precip } = waterData;
   return {
-    ...runWaterDeficitModel(
+    ...runNutrientModel(
       precip,
       pet,
       waterCapacity,
-      new Date(2023, 5, 1),
-      [],
-      0,
+      plantingDate ? new Date(plantingDate + 'T00:00') : new Date(),
+      initialOrganicMatter,
+      applications,
+      testResults,
+      dates,
       devOptions
     ),
     dates
