@@ -199,6 +199,7 @@
     width: fit-content;
     font-size: 1em;
     max-height: 320px;
+    margin: 0 auto;
 
     .row {
       display: grid;

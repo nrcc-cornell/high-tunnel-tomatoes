@@ -75,55 +75,57 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
         initialOrganicMatter: newSC.organicMatter,
         plantingDate: null,
         terminationDate: null,
-        applications: {
-          123456: {
-            id: 123456,
-            date: '2023-03-01',
-            waterAmount: 0,
-            fastN: 60,
-            mediumN: 60,
-            slowN: 60,
-            inorganicN: 0
-          },
-          123457: {
-            id: 123457,
-            date: '2023-05-06',
-            waterAmount: 0.4,
-            fastN: 10,
-            mediumN: 0,
-            slowN: 60,
-            inorganicN: 0
-          },
-          123458: {
-            id: 123458,
-            date: '2023-05-12',
-            waterAmount: 0,
-            fastN: 0,
-            mediumN: 30,
-            slowN: 0,
-            inorganicN: 60
-          }
-        },
-        testResults: {
-          4321: {
-            id: 4321,
-            date: '2023-05-01',
-            organicMatter: 6,
-            inorganicN: 50
-          },
-          5432: {
-            id: 5432,
-            date: '2023-06-01',
-            organicMatter: 8,
-            inorganicN: 100
-          },
-          6543: {
-            id: 6543,
-            date: '2023-10-10',
-            organicMatter: 3,
-            inorganicN: 20
-          }
-        }
+        applications: {},
+        testResults: {}
+        // applications: {
+        //   123456: {
+        //     id: 123456,
+        //     date: '2023-03-01',
+        //     waterAmount: 0,
+        //     fastN: 60,
+        //     mediumN: 60,
+        //     slowN: 60,
+        //     inorganicN: 0
+        //   },
+        //   123457: {
+        //     id: 123457,
+        //     date: '2023-05-06',
+        //     waterAmount: 0.4,
+        //     fastN: 10,
+        //     mediumN: 0,
+        //     slowN: 60,
+        //     inorganicN: 0
+        //   },
+        //   123458: {
+        //     id: 123458,
+        //     date: '2023-05-12',
+        //     waterAmount: 0,
+        //     fastN: 0,
+        //     mediumN: 30,
+        //     slowN: 0,
+        //     inorganicN: 60
+        //   }
+        // },
+        // testResults: {
+        //   4321: {
+        //     id: 4321,
+        //     date: '2023-05-01',
+        //     organicMatter: 6,
+        //     inorganicN: 50
+        //   },
+        //   5432: {
+        //     id: 5432,
+        //     date: '2023-06-01',
+        //     organicMatter: 8,
+        //     inorganicN: 100
+        //   },
+        //   6543: {
+        //     id: 6543,
+        //     date: '2023-10-10',
+        //     organicMatter: 3,
+        //     inorganicN: 20
+        //   }
+        // }
       };
     }
     userOptions.set(newUO);
