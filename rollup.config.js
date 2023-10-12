@@ -9,6 +9,7 @@ import sveltePreprocess from 'svelte-preprocess';
 import typescript from '@rollup/plugin-typescript';
 
 const production = !process.env.ROLLUP_WATCH;
+console.log('IS PRODUCTION: ', production);
 
 function serve() {
 	let server;
@@ -84,7 +85,3 @@ export default {
 		clearScreen: false
 	}
 };
-
-
-
-// figure out css issue or redesign yourself
