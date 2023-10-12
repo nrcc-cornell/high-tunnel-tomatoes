@@ -75,6 +75,17 @@
             input$min={`${endDate.slice(0,4)}-03-01`}
             input$max={endDate}
           />
+          <ShapedTextfield
+            bind:value={localUserOptions.terminationDate}
+            highlight={localUserOptions.terminationDate !== $userOptions.terminationDate}
+            label='Termination Date'
+            helperText='Date the tomatoes were terminated'
+            helperProps={{ persistent: true }}
+            type='date'
+            disabled={!localUserOptions.plantingDate}
+            input$min={localUserOptions.plantingDate}
+            input$max={endDate}
+          />
         </div>
 
         <div style='margin-top: 24px;'>

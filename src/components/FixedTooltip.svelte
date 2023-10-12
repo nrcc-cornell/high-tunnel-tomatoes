@@ -1,13 +1,4 @@
 <script>
-  // If hovering show, else dont
-  // show VWC at idx
-  // show inorg N at idx (ppm and lbs/acre)
-  // show fast N at idx (ppm and lbs/acre)
-  // show medium N at idx (ppm and lbs/acre)
-  // show slow N at idx (ppm and lbs/acre)
-  // if test event, show results
-  // if application event, show what was added
-
   import { tooltipData } from "../store/store";
 
   const nRows = [{
@@ -27,8 +18,6 @@
     key: 'slowN',
     appKey: 'slowN'
   }];
-
-  $: console.log($tooltipData ? $tooltipData.application : null);
 </script>
 
 {#if $tooltipData}
@@ -97,40 +86,3 @@
     }
   }
 </style>
-
-
-<!-- {
-  "date": "2023-06-05",
-  "vwc": 0.172,
-  "tin": {
-    "ppm": 51.215,
-    "lbsPerAcre": 102.43
-  },
-  "fastN": {
-    "ppm": 0.044,
-    "lbsPerAcre": 0.088
-  },
-  "mediumN": {
-    "ppm": 13.439,
-    "lbsPerAcre": 26.878
-  },
-  "slowN": {
-    "ppm": 29.738,
-    "lbsPerAcre": 59.476
-  },
-  "application": {
-    "date": "2023-06-05",
-    "waterAmount": 0.03,
-    "fastN": 0,
-    "mediumN": 0,
-    "slowN": 0,
-    "inorganicN": 0,
-    "id": 1696960928214
-  },
-  "testResult": {
-    "id": 5432,
-    "date": "2023-06-05",
-    "organicMatter": 8,
-    "inorganicN": 100
-  }
-} -->

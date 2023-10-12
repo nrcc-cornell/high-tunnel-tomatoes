@@ -6,6 +6,7 @@ const mediumKN = 0.003;
 const slowKN = 0.0002;
 
 function convertInToM(inches: number) {
+  // inches / 39.37 = meters
   return inches / 39.37
 }
 
@@ -70,20 +71,17 @@ export default function balanceNitrogen(
   const gTheta = (fc - mp)/(vwc - mp); //// supposed to be equation from Josef
   const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
 
-
-
-  //// Valid output of model
-  //// add flags or something to indicate application and test event
-  //// style the nitrogen chart, organize them too
-
-
-
+  console.log(gTheta, fastKN, fastN, gTheta * fastKN * fastN);
 
   let somLbs = convertOMPercentToLbAcre(som);
   const somMineralizedLbs = gTheta * somKN * somLbs;
+  console.log(`somLbs: ${somLbs}   somMineralizedLbs: ${somMineralizedLbs}`);
   const fastMineralizedLbs = gTheta * fastKN * fastN;
+  console.log(`somLbs: ${somLbs}   fastMineralizedLbs: ${fastMineralizedLbs}`);
   const mediumMineralizedLbs = gTheta * mediumKN * mediumN;
+  console.log(`somLbs: ${somLbs}   mediumMineralizedLbs: ${mediumMineralizedLbs}`);
   const slowMineralizedLbs = gTheta * slowKN * slowN;
+  console.log(`somLbs: ${somLbs}   slowMineralizedLbs: ${slowMineralizedLbs}`);
 
   const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
   const tnKgs = convertLbAcreToKgM2(tnLbs);
@@ -97,6 +95,10 @@ export default function balanceNitrogen(
 
   const otherRemoved = (convertKgM2ToLbAcre(UN) + convertKgM2ToLbAcre(QN)) / 4;
 
+  console.log(`TIN LBS/ACRE: ${newTinLbs}`);
+  console.log(`UN: ${convertKgM2ToLbAcre(UN)}   QN: ${convertKgM2ToLbAcre(QN)}`);
+  console.log(fastN, fastMineralizedLbs, otherRemoved, fastN - fastMineralizedLbs - otherRemoved);
+
   return {
     tin: newTinLbs,
     som: convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved),
@@ -105,12 +107,3 @@ export default function balanceNitrogen(
     slowN: slowN - slowMineralizedLbs - otherRemoved
   };
 }
-
-
-// //// Next steps:
-// //// // add irrigation stuff into water model
-// //// // stub a temporary irrigation schedule for now
-// //// // build out nitrogen model
-// //// // account for planting date (no plant uptake if not planted)
-// //// // account for nitrogen applications
-// //// // account for testing adjustments

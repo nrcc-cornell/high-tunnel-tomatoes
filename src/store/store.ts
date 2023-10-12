@@ -3,7 +3,7 @@ import asyncDerived from '../lib/asyncDerived';
 import { getSoilCharacteristics } from '../lib/soilCharacteristics';
 import { getWaterData } from '../lib/waterData';
 import { handleRunNutrientModel, SOIL_DATA } from '../lib/devNutrientModel';
-import { constructWaterChartAnnotations, calcPointColors, calcPointBorders } from '../lib/chartParts';
+import { constructWaterChartDetails, constructNitrogenChartDetails } from '../lib/chartParts';
 import { loadActiveLocationId, loadLocations, loadOptions } from '../lib/handleStorage';
 import type { LocationObj } from '../global';
 
@@ -74,6 +74,7 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
         waterCapacity: newSC.waterCapacity,
         initialOrganicMatter: newSC.organicMatter,
         plantingDate: null,
+        terminationDate: null,
         applications: {
           123456: {
             id: 123456,
@@ -139,7 +140,6 @@ export const nutrientData = derived([devOptions, userOptions, waterData], ([$dev
   let results = null;
   if ($devOptions && $userOptions && $waterData) {
     const nmRes = handleRunNutrientModel($devOptions, $userOptions, $waterData);
-    const finalValue = nmRes.vwc.slice(-1)[0];
 
     const {
       prewiltingpoint,
@@ -148,29 +148,19 @@ export const nutrientData = derived([devOptions, userOptions, waterData], ([$dev
       saturation
     } = $devOptions.soilmoistureoptions[$userOptions.waterCapacity];
   
-    const thresholds = [
+    const vwcThresholds = [
       prewiltingpoint,
       stressthreshold,
       fieldcapacity,
       saturation
     ].map(t => Math.round(t / 18 * 1000) / 1000);
 
-    // const nitrogenPntBorders = Object.values($userOptions.testResults).map((obj: { date: string }) => $waterData.dates.findIndex(d => d === obj.date));
+    const plantingDateIdx = $waterData.dates.findIndex(d => d === $userOptions.plantingDate);
+    const terminationDateIdx = $waterData.dates.findIndex(d => d === $userOptions.terminationDate);
+    const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, $userOptions.applications, $waterData.dates, plantingDateIdx, terminationDateIdx);
+    const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $waterData.dates, plantingDateIdx, terminationDateIdx);
 
-    const vwcAnnotations = constructWaterChartAnnotations(thresholds, finalValue);
-    const vwcPntColors = calcPointColors(nmRes.vwc, thresholds);
-    const vwcPntBorders = calcPointBorders($userOptions.applications, $waterData.dates);
-
-    // const ddThresholds = [
-    //   prewiltingpoint - fieldcapacity,
-    //   stressthreshold - fieldcapacity,
-    //   fieldcapacity - fieldcapacity,
-    //   saturation - fieldcapacity
-    // ];
-    // const ddAnnotations = constructWaterChartAnnotations(ddThresholds, nmRes.dd.slice(-1)[0]);
-    // const ddPntColors = calcPointColors(nmRes.dd, ddThresholds);
-
-    results = { ...nmRes, vwcPntColors, vwcPntBorders, vwcAnnotations };
+    results = { ...nmRes, ...vwcChartDetails, ...tinChartDetails };
   }
   if ($devOptions && $userOptions && $waterData !== null) {
     changeLoading('nutrientModel', false);

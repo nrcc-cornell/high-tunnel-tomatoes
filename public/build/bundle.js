@@ -905,6 +905,1728 @@ var app = (function () {
         $inject_state() { }
     }
 
+    const subscriber_queue = [];
+    /**
+     * Creates a `Readable` store that allows reading by subscription.
+     * @param value initial value
+     * @param {StartStopNotifier} [start]
+     */
+    function readable(value, start) {
+        return {
+            subscribe: writable(value, start).subscribe
+        };
+    }
+    /**
+     * Create a `Writable` store that allows both updating and reading by subscription.
+     * @param {*=}value initial value
+     * @param {StartStopNotifier=} start
+     */
+    function writable(value, start = noop) {
+        let stop;
+        const subscribers = new Set();
+        function set(new_value) {
+            if (safe_not_equal(value, new_value)) {
+                value = new_value;
+                if (stop) { // store is ready
+                    const run_queue = !subscriber_queue.length;
+                    for (const subscriber of subscribers) {
+                        subscriber[1]();
+                        subscriber_queue.push(subscriber, value);
+                    }
+                    if (run_queue) {
+                        for (let i = 0; i < subscriber_queue.length; i += 2) {
+                            subscriber_queue[i][0](subscriber_queue[i + 1]);
+                        }
+                        subscriber_queue.length = 0;
+                    }
+                }
+            }
+        }
+        function update(fn) {
+            set(fn(value));
+        }
+        function subscribe(run, invalidate = noop) {
+            const subscriber = [run, invalidate];
+            subscribers.add(subscriber);
+            if (subscribers.size === 1) {
+                stop = start(set) || noop;
+            }
+            run(value);
+            return () => {
+                subscribers.delete(subscriber);
+                if (subscribers.size === 0 && stop) {
+                    stop();
+                    stop = null;
+                }
+            };
+        }
+        return { set, update, subscribe };
+    }
+    function derived(stores, fn, initial_value) {
+        const single = !Array.isArray(stores);
+        const stores_array = single
+            ? [stores]
+            : stores;
+        const auto = fn.length < 2;
+        return readable(initial_value, (set) => {
+            let started = false;
+            const values = [];
+            let pending = 0;
+            let cleanup = noop;
+            const sync = () => {
+                if (pending) {
+                    return;
+                }
+                cleanup();
+                const result = fn(single ? values[0] : values, set);
+                if (auto) {
+                    set(result);
+                }
+                else {
+                    cleanup = is_function(result) ? result : noop;
+                }
+            };
+            const unsubscribers = stores_array.map((store, i) => subscribe(store, (value) => {
+                values[i] = value;
+                pending &= ~(1 << i);
+                if (started) {
+                    sync();
+                }
+            }, () => {
+                pending |= (1 << i);
+            }));
+            started = true;
+            sync();
+            return function stop() {
+                run_all(unsubscribers);
+                cleanup();
+                // We need to set this to false because callbacks can still happen despite having unsubscribed:
+                // Callbacks might already be placed in the queue which doesn't know it should no longer
+                // invoke this derived store.
+                started = false;
+            };
+        });
+    }
+
+    function asyncDerived (stores, callback, initial_value) {
+        let guard;
+        return derived(stores, ($stores, set) => {
+            const inner = guard = {};
+            set(initial_value);
+            Promise.resolve(callback($stores)).then(value => {
+                if (guard === inner) {
+                    set(value);
+                }
+            });
+        }, initial_value);
+    }
+
+    const rootDepthInches = 18;
+    const rootDepthMeters = convertInToM(rootDepthInches);
+    const somKN = 0.000083;
+    const fastKN = 0.1;
+    const mediumKN = 0.003;
+    const slowKN = 0.0002;
+    function convertInToM(inches) {
+        // inches / 39.37 = meters
+        return inches / 39.37;
+    }
+    function convertLbAcreToKgM2(lbPerAcre) {
+        // lbs/acre * 0.0001121 = kg/m2
+        return lbPerAcre * 0.0001121;
+    }
+    function convertKgM2ToLbAcre(kgPerM2) {
+        // kg/m2 / 0.0001121 = lbs/acre
+        return kgPerM2 / 0.0001121;
+    }
+    function convertOMPercentToLbAcre(percent) {
+        // 1% OM = 2000lb/acre
+        return percent * 2000;
+    }
+    function convertLbAcreToOMPercent(lbPerAcre) {
+        // 2000lb/acre = 1% OM
+        return lbPerAcre / 2000;
+    }
+    function calcTNV(tnKgs, plantUptakeTheta) {
+        return tnKgs / (rootDepthMeters * plantUptakeTheta);
+    }
+    function calcPlantUptake(tnV, petInches) {
+        const petMeters = convertInToM(petInches);
+        return tnV * petMeters;
+    }
+    function calcTransported(tnV, drainageInches) {
+        const drainageMeters = convertInToM(drainageInches);
+        return tnV * drainageMeters;
+    }
+    function balanceNitrogen(vwc, fc, mp, drainage, hasPlants, pet, tin, som, fastN, mediumN, slowN) {
+        //  -------------------------------------------------------------
+        //  Calculate soil inorganic nitrogen (lbs/acre) from daily volumetric water content, 
+        //    nitrogen application dates and amounts, and an initial soil organic matter percentage
+        //
+        //  initOM                : initial soil organic matter (%)
+        //  nitrogenApplications  : array of [date as 'YYYY-MM-DD', amount of nitrogen applied (lbs/acre)]
+        //  water                 : daily array of [date as 'YYYY-MM-DD', volumetric water content as decimal, 24hr drainage (inches)]
+        //
+        //  -------------------------------------------------------------
+        const gTheta = (fc - mp) / (vwc - mp); //// supposed to be equation from Josef
+        const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
+        console.log(gTheta, fastKN, fastN, gTheta * fastKN * fastN);
+        let somLbs = convertOMPercentToLbAcre(som);
+        const somMineralizedLbs = gTheta * somKN * somLbs;
+        console.log(`somLbs: ${somLbs}   somMineralizedLbs: ${somMineralizedLbs}`);
+        const fastMineralizedLbs = gTheta * fastKN * fastN;
+        console.log(`somLbs: ${somLbs}   fastMineralizedLbs: ${fastMineralizedLbs}`);
+        const mediumMineralizedLbs = gTheta * mediumKN * mediumN;
+        console.log(`somLbs: ${somLbs}   mediumMineralizedLbs: ${mediumMineralizedLbs}`);
+        const slowMineralizedLbs = gTheta * slowKN * slowN;
+        console.log(`somLbs: ${somLbs}   slowMineralizedLbs: ${slowMineralizedLbs}`);
+        const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
+        const tnKgs = convertLbAcreToKgM2(tnLbs);
+        const tnV = calcTNV(tnKgs, plantUptakeTheta);
+        const UN = hasPlants ? calcPlantUptake(tnV, pet) : 0;
+        const QN = calcTransported(tnV, drainage);
+        const newTinKgs = tnKgs - UN - QN;
+        const newTinLbs = convertKgM2ToLbAcre(newTinKgs);
+        const otherRemoved = (convertKgM2ToLbAcre(UN) + convertKgM2ToLbAcre(QN)) / 4;
+        console.log(`TIN LBS/ACRE: ${newTinLbs}`);
+        console.log(`UN: ${convertKgM2ToLbAcre(UN)}   QN: ${convertKgM2ToLbAcre(QN)}`);
+        console.log(fastN, fastMineralizedLbs, otherRemoved, fastN - fastMineralizedLbs - otherRemoved);
+        return {
+            tin: newTinLbs,
+            som: convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved),
+            fastN: fastN - fastMineralizedLbs - otherRemoved,
+            mediumN: mediumN - mediumMineralizedLbs - otherRemoved,
+            slowN: slowN - slowMineralizedLbs - otherRemoved
+        };
+    }
+
+    // ------------------------------------------ //
+    // All derived from Brian's csf-waterdef code //
+    // ------------------------------------------ //
+    var SoilMoistureOptionLevel;
+    (function (SoilMoistureOptionLevel) {
+        SoilMoistureOptionLevel["LOW"] = "low";
+        SoilMoistureOptionLevel["MEDIUM"] = "medium";
+        SoilMoistureOptionLevel["HIGH"] = "high";
+    })(SoilMoistureOptionLevel || (SoilMoistureOptionLevel = {}));
+    // soildata:
+    // soil moisture and drainage characteristics for different levels of soil water capacity
+    // const timesSixInch = 2;
+    const timesSixInch = 3;
+    const rounder = 100;
+    const multiplier = timesSixInch * rounder;
+    const SOIL_DATA = {
+        soilmoistureoptions: {
+            low: {
+                wiltingpoint: Math.round(0.4 * multiplier) / rounder,
+                prewiltingpoint: Math.round(0.64 * multiplier) / rounder,
+                stressthreshold: Math.round(0.8 * multiplier) / rounder,
+                fieldcapacity: Math.round(1.2 * multiplier) / rounder,
+                saturation: Math.round(2.6 * multiplier) / rounder
+            },
+            medium: {
+                wiltingpoint: Math.round(0.6 * multiplier) / rounder,
+                prewiltingpoint: Math.round(0.945 * multiplier) / rounder,
+                stressthreshold: Math.round(1.175 * multiplier) / rounder,
+                fieldcapacity: Math.round(1.75 * multiplier) / rounder,
+                saturation: Math.round(2.9 * multiplier) / rounder
+            },
+            high: {
+                wiltingpoint: Math.round(0.85 * multiplier) / rounder,
+                prewiltingpoint: Math.round(1.30 * multiplier) / rounder,
+                stressthreshold: Math.round(1.6 * multiplier) / rounder,
+                fieldcapacity: Math.round(2.35 * multiplier) / rounder,
+                saturation: Math.round(3.25 * multiplier) / rounder
+            },
+            kc: {
+                Lini: {
+                    name: 'Initial Growth Stage Length',
+                    value: 30,
+                    description: 'length (days) of initial growth stage'
+                },
+                Ldev: {
+                    name: 'Development Growth Stage Length',
+                    value: 40,
+                    description: 'length (days) of development growth stage'
+                },
+                Lmid: {
+                    name: 'Mature Growth Stage Length',
+                    value: 80,
+                    description: 'length (days) of middle (mature) growth stage'
+                },
+                Llate: {
+                    name: 'Late Growth Stage Length',
+                    value: 30,
+                    description: 'length (days) of late growth stage'
+                },
+                Kcini: {
+                    name: 'Initial Growth Stage Crop Coefficient',
+                    value: 0.60,
+                    description: 'crop coefficient for initial growth stage'
+                },
+                Kcmid: {
+                    name: 'Mature Growth Stage Crop Coefficient',
+                    value: 1.15,
+                    description: 'crop coefficient for middle (mature) growth stage'
+                },
+                Kcend: {
+                    name: 'End of Season Crop Coefficient',
+                    value: 0.80,
+                    description: 'crop coefficient at end of growing season'
+                }
+            },
+            p: 0.5,
+            petAdj: 0.55
+        },
+        soildrainageoptions: {
+            low: { daysToDrainToFcFromSat: 0.125 },
+            medium: { daysToDrainToFcFromSat: 1.0 },
+            high: { daysToDrainToFcFromSat: 2.0 },
+        }
+    };
+    function getCropCoeff(numdays, devSD) {
+        // -----------------------------------------------------------------------------------------
+        // Calculate crop coefficient for a specific growth stage of plant.
+        // - Coefficients for initial, middle and end growth stages are assigned directly.
+        // - Coefficients for development and late growth stages are determined by linear interpolation between coefficients for surrounding stages.
+        // Refer to FAO-56 single crop coefficient reference, along with other sources for values specific for the Northeast US.
+        //
+        // numdays : days since planting, used to estimate the growth stage.
+        // Lini  : length (days) of initial growth stage
+        // Ldev  : length (days) of development growth stage
+        // Lmid  : length (days) of middle (mature) growth stage
+        // Llate : length (days) of late growth stage
+        // Kcini : crop coefficient for initial growth stage
+        // Kcmid : crop coefficient for middle (mature) growth stage
+        // Kcend : crop coefficient at end of growing season
+        // Kc    : crop coefficient for this specific growth stage - we use Kc to adjust grass reference ET
+        // -----------------------------------------------------------------------------------------
+        const { Lini, Ldev, Lmid, Llate, Kcini, Kcmid, Kcend } = devSD.soilmoistureoptions.kc;
+        let Kc = null;
+        if (numdays <= Lini.value) {
+            // before planting or in initial growth stage
+            Kc = Kcini.value;
+        }
+        else if ((numdays > Lini.value) && (numdays < (Lini.value + Ldev.value))) {
+            // in development growth stage
+            // linearly interpolate between Kcini and Kcmid to find Kc within development stage
+            Kc = Kcini.value + (numdays - Lini.value) * (Kcmid.value - Kcini.value) / Ldev.value;
+        }
+        else if ((numdays >= (Lini.value + Ldev.value)) && (numdays <= (Lini.value + Ldev.value + Lmid.value))) {
+            // in middle (mature) growth stage
+            Kc = Kcmid.value;
+        }
+        else if ((numdays > (Lini.value + Ldev.value + Lmid.value)) && (numdays < (Lini.value + Ldev.value + Lmid.value + Llate.value))) {
+            // in late growth stage
+            // linearly interpolate between Kcmid and Kcend to find Kc within late growth stage
+            Kc = Kcmid.value - (numdays - (Lini.value + Ldev.value + Lmid.value)) * (Kcmid.value - Kcend.value) / Llate.value;
+        }
+        else {
+            // at end of growing season
+            Kc = Kcend.value;
+        }
+        return Kc;
+    }
+    function getPotentialDailyDrainage(soilCharacteristics, drainagecap) {
+        // -----------------------------------------------------------------------------------------
+        // Calculate potential daily drainage of soil
+        // -----------------------------------------------------------------------------------------
+        return ((soilCharacteristics.saturation -
+            soilCharacteristics.fieldcapacity) /
+            drainagecap);
+    }
+    function getTawForPlant(soilCharacteristics) {
+        // -----------------------------------------------------------------------------------------
+        // Calculate total available water (TAW) for plant, defined here as:
+        // soil moisture at field capacity minus soil moisture at wilting point
+        // -----------------------------------------------------------------------------------------
+        return soilCharacteristics.fieldcapacity - soilCharacteristics.wiltingpoint;
+    }
+    function getWaterStressCoeff(Dr, TAW, p) {
+        // -----------------------------------------------------------------------------------------
+        // Calculate coefficient for adjusting ET when accounting for decreased ET during water stress conditions.
+        // Refer to FAO-56 eq 84, pg 169
+        // Dr  : the antecedent water deficit (in)
+        // TAW : total available (in) water for the plant (soil moisture at field capacity minus soil moisture at wilting point).
+        // p   : at what fraction between field capacity and wilting point do we start applying this water stress factor.
+        // Ks  : water stress coefficient
+        // -----------------------------------------------------------------------------------------
+        let Ks = null;
+        Dr = -1 * Dr;
+        Ks = Dr <= p * TAW ? 1 : (TAW - Dr) / ((1 - p) * TAW);
+        Ks = Math.max(Ks, 0);
+        return Ks;
+    }
+    function runNutrientModel(precip, pet, soilcap, plantingDate, terminationDate, initialOrganicMatter, applications, testResults, dates, devSD) {
+        // -----------------------------------------------------------------------------------------
+        // Calculate daily volumetric water content (inches H2O / inch soil) from daily precipitation, evapotranspiration, soil drainage and runoff.
+        //
+        // Soil water amount is:
+        //    - bounded below by the wilting point
+        //    - bounded above by saturation
+        //
+        //  precip          : daily precipitation array (in) : (NRCC ACIS grid 3)
+        //  pet             : daily potential evapotranspiration array (in) : (grass reference PET obtained from NRCC MORECS model output)
+        //  soilcap         : soil water capacity ('high','medium','low')
+        //  plantingDate    : date crop was planted
+        //  irrigationIdxs  : array of indices where the user irrigated
+        //
+        // -----------------------------------------------------------------------------------------
+        const soil_options = devSD.soilmoistureoptions;
+        // Calculate number of days since planting, negative value means current days in loop below is before planting
+        let daysSincePlanting = Math.floor((Date.parse(plantingDate.getFullYear() + '-03-01') - plantingDate.getTime()) / 86400000 + 1);
+        let daysSinceTermination = Math.floor((Date.parse(terminationDate.getFullYear() + '-03-01') - terminationDate.getTime()) / 86400000 + 1);
+        // Initialize running tally of the amount of water in the soil
+        let deficit = 0;
+        const fc = soil_options[soilcap].fieldcapacity;
+        // Initialize variables for storing nitrogen values between days
+        let tin = 0;
+        let som = initialOrganicMatter;
+        let fastN = 0;
+        let mediumN = 0;
+        let slowN = 0;
+        // Initialize output arrays
+        const vwcDaily = [(deficit + fc) / 18];
+        const tinDaily = [0];
+        const fastDaily = [0];
+        const mediumDaily = [0];
+        const slowDaily = [0];
+        // Calculate daily drainage rate that occurs when soil water content is between saturation and field capacity
+        const dailyPotentialDrainageRate = getPotentialDailyDrainage(soil_options[soilcap], devSD.soildrainageoptions[soilcap].daysToDrainToFcFromSat);
+        // Loop through all days, starting with the second day (we already have the values for the initial day from model initialization)
+        for (let idx = 1; idx < pet.length; idx++) {
+            const date = dates[idx];
+            daysSincePlanting += 1;
+            daysSinceTermination += 1;
+            const hasPlants = daysSincePlanting >= 0 && daysSinceTermination < 0;
+            // Calculate Ks, the water stress coefficient, using antecedent deficit
+            const TAW = getTawForPlant(soil_options[soilcap]);
+            const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
+            // Calculate Kc, the crop coefficient, account for if plants exist and what stage they are at
+            const Kc = getCropCoeff(hasPlants ? daysSincePlanting : -1, devSD);
+            // Adjust water movement to account for calculated and provided variables
+            const totalDailyPET = -1 * pet[idx] * devSD.soilmoistureoptions.petAdj * Kc * Ks;
+            // const totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
+            let totalDailyPrecip = 0;
+            const todaysApplications = Object.values(applications).filter(obj => obj.date === date);
+            if (todaysApplications.length) {
+                todaysApplications.forEach(obj => {
+                    totalDailyPrecip += obj.waterAmount;
+                    fastN += obj.fastN;
+                    mediumN += obj.mediumN;
+                    slowN += obj.slowN;
+                    tin += obj.inorganicN;
+                });
+            }
+            // Convert daily rates to hourly rates. For this simple model, rates are constant throughout the day.
+            // For precip   : this assumption is about all we can do without hourly observations
+            // For PET      : this assumption isn't great. Something following diurnal cycle would be best.
+            // For drainage : this assumption is okay
+            // ALL HOURLY RATES POSITIVE
+            const hourlyPrecip = totalDailyPrecip / 24;
+            const hourlyPET = (-1 * totalDailyPET) / 24;
+            const hourlyPotentialDrainage = dailyPotentialDrainageRate / 24;
+            // Initialize daily drainage total for nitrogen calculations
+            let drainageTotal = 0;
+            for (let hr = 1; hr <= 24; hr++) {
+                // Calculate hourly drainage estimate. It is bounded by the potential drainage rate and available
+                // water in excess of the field capacity. We assume drainage does not occur below field capacity.
+                let hourlyDrainage;
+                if (deficit > 0) {
+                    hourlyDrainage = Math.min(deficit, hourlyPotentialDrainage);
+                }
+                else {
+                    hourlyDrainage = 0;
+                }
+                drainageTotal += hourlyDrainage;
+                // Adjust soil water based on hourly water budget.
+                // soil water is bound by saturation (soil can't be super-saturated). This effectively reduces soil water by hourly runoff as well.
+                deficit = Math.min(deficit + hourlyPrecip - hourlyPET - hourlyDrainage, soil_options[soilcap].saturation - fc);
+                // soil water is bound by wilting point, but calculations should never reach wilting point based on this model. We bound it below for completeness.
+                // In the real world, soil water is able to reach wilting point. The user should note that soil water values NEAR the wilting point
+                // from this model should be interpreted as 'danger of wilting exists'.
+                deficit = Math.max(deficit, soil_options[soilcap].wiltingpoint - fc);
+            }
+            // Do something with drainageTotal and calculate tinDaily value
+            const todaysTests = Object.values(testResults).filter(obj => obj.date === date);
+            if (todaysTests.length) {
+                const lastTest = todaysTests[todaysTests.length - 1];
+                som = lastTest.organicMatter;
+                tin = lastTest.inorganicN;
+            }
+            console.log('--------------------------------------');
+            console.log(date);
+            const vwc = (deficit + fc) / 18;
+            const mp = 0; //// matric potential that Josef needs to give for high, medium, low
+            ({ tin, som, fastN, mediumN, slowN } = balanceNitrogen(vwc, fc / 18, mp, drainageTotal, hasPlants, -1 * totalDailyPET, tin, som, fastN, mediumN, slowN));
+            vwcDaily.push(Math.round(vwc * 1000) / 1000);
+            tinDaily.push(Math.round((tin / 2) * 1000) / 1000);
+            fastDaily.push(Math.round((fastN / 2) * 1000) / 1000);
+            mediumDaily.push(Math.round((mediumN / 2) * 1000) / 1000);
+            slowDaily.push(Math.round((slowN / 2) * 1000) / 1000);
+        }
+        return {
+            vwc: vwcDaily,
+            tin: tinDaily,
+            fastN: fastDaily,
+            mediumN: mediumDaily,
+            slowN: slowDaily,
+            // dd
+        };
+    }
+    const handleRunNutrientModel = (devOptions, userOptions, waterData) => {
+        const { waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter } = userOptions;
+        const { dates, pet, precip } = waterData;
+        return Object.assign(Object.assign({}, runNutrientModel(precip, pet, waterCapacity, plantingDate ? new Date(plantingDate + 'T00:00') : new Date(), terminationDate ? new Date(terminationDate + 'T00:00') : new Date(), initialOrganicMatter, applications, testResults, dates, devOptions)), { dates });
+    };
+
+    async function getSoilCharacteristics(activeLocation) {
+        // const soilColumnData = await fetchSoilColumnDataViaPostRest([activeLocation.lon, activeLocation.lat]);
+        // if (!soilColumnData) return null;
+        // const soilTypes = convertIntoSoilTypes(soilColumnData);
+        // const [ avgClay, avgSand, avgSilt, avgOM, avgBD ] = calcAvgSoilComp(soilTypes);
+        // return {
+        //   waterCapacity: categorizeTexture(avgClay, avgSand, avgSilt),
+        //   composition: { clay: Math.round(avgClay), sand: Math.round(avgSand), silt: Math.round(avgSilt) },
+        //   organicMatter: Math.round(avgOM),
+        //   bulkDensity: avgBD
+        // };
+        return {
+            "waterCapacity": "medium",
+            "composition": {
+                "clay": 1,
+                "sand": 21,
+                "silt": 11
+            },
+            "organicMatter": 1,
+            "bulkDensity": 0.43910569105691066
+        };
+    }
+
+    async function getWaterData({ lat, lon }, date) {
+        // try {
+        //   // fetch PET and precip
+        //   let [
+        //     { precip, precipFcstLength },
+        //     { pet, petFcstLength}
+        //   ] = await Promise.all([
+        //     fetchPrecip(lat, lon, date),
+        //     fetchPETData(lat, lon, date.slice(0,4))
+        //   ]);
+        //   // adjust pet and precip to have matching lengths
+        //   const lengthDiff = precip.length - pet.length;
+        //   if (lengthDiff > 0) {
+        //     precipFcstLength = Math.max(precipFcstLength - lengthDiff, 0);
+        //     precip = precip.slice(0, precip.length - lengthDiff)
+        //   } else if (lengthDiff < 0) {
+        //     petFcstLength = Math.max(petFcstLength - lengthDiff, 0);
+        //     pet = pet.slice(0, pet.length - lengthDiff)
+        //   }
+        //   // instantiate results obj and determine the number of forecast days that will be in results
+        //   const results = {
+        //     dates: [],
+        //     pet: [],
+        //     precip: [],
+        //     fcstLength: Math.max(precipFcstLength, petFcstLength)
+        //   };
+        //   // loop through data pushing to results obj and ensuring that the dates match
+        //   for (let i = 0; i < pet.length; i++) {
+        //     const [petDate, petValue] = pet[i];
+        //     const [precipDate, precipValue] = precip[i];
+        //     if (petDate === precipDate) {
+        //       results.dates.push(petDate);
+        //       results.pet.push(petValue);
+        //       results.precip.push(precipValue);
+        //     } else {
+        //       throw 'PET and precip dates do not match';
+        //     }
+        //   }
+        //   return results;
+        // } catch (e) {
+        //   console.error(e);
+        //   return null;
+        // }
+        return {
+            "dates": [
+                "2023-03-01",
+                "2023-03-02",
+                "2023-03-03",
+                "2023-03-04",
+                "2023-03-05",
+                "2023-03-06",
+                "2023-03-07",
+                "2023-03-08",
+                "2023-03-09",
+                "2023-03-10",
+                "2023-03-11",
+                "2023-03-12",
+                "2023-03-13",
+                "2023-03-14",
+                "2023-03-15",
+                "2023-03-16",
+                "2023-03-17",
+                "2023-03-18",
+                "2023-03-19",
+                "2023-03-20",
+                "2023-03-21",
+                "2023-03-22",
+                "2023-03-23",
+                "2023-03-24",
+                "2023-03-25",
+                "2023-03-26",
+                "2023-03-27",
+                "2023-03-28",
+                "2023-03-29",
+                "2023-03-30",
+                "2023-03-31",
+                "2023-04-01",
+                "2023-04-02",
+                "2023-04-03",
+                "2023-04-04",
+                "2023-04-05",
+                "2023-04-06",
+                "2023-04-07",
+                "2023-04-08",
+                "2023-04-09",
+                "2023-04-10",
+                "2023-04-11",
+                "2023-04-12",
+                "2023-04-13",
+                "2023-04-14",
+                "2023-04-15",
+                "2023-04-16",
+                "2023-04-17",
+                "2023-04-18",
+                "2023-04-19",
+                "2023-04-20",
+                "2023-04-21",
+                "2023-04-22",
+                "2023-04-23",
+                "2023-04-24",
+                "2023-04-25",
+                "2023-04-26",
+                "2023-04-27",
+                "2023-04-28",
+                "2023-04-29",
+                "2023-04-30",
+                "2023-05-01",
+                "2023-05-02",
+                "2023-05-03",
+                "2023-05-04",
+                "2023-05-05",
+                "2023-05-06",
+                "2023-05-07",
+                "2023-05-08",
+                "2023-05-09",
+                "2023-05-10",
+                "2023-05-11",
+                "2023-05-12",
+                "2023-05-13",
+                "2023-05-14",
+                "2023-05-15",
+                "2023-05-16",
+                "2023-05-17",
+                "2023-05-18",
+                "2023-05-19",
+                "2023-05-20",
+                "2023-05-21",
+                "2023-05-22",
+                "2023-05-23",
+                "2023-05-24",
+                "2023-05-25",
+                "2023-05-26",
+                "2023-05-27",
+                "2023-05-28",
+                "2023-05-29",
+                "2023-05-30",
+                "2023-05-31",
+                "2023-06-01",
+                "2023-06-02",
+                "2023-06-03",
+                "2023-06-04",
+                "2023-06-05",
+                "2023-06-06",
+                "2023-06-07",
+                "2023-06-08",
+                "2023-06-09",
+                "2023-06-10",
+                "2023-06-11",
+                "2023-06-12",
+                "2023-06-13",
+                "2023-06-14",
+                "2023-06-15",
+                "2023-06-16",
+                "2023-06-17",
+                "2023-06-18",
+                "2023-06-19",
+                "2023-06-20",
+                "2023-06-21",
+                "2023-06-22",
+                "2023-06-23",
+                "2023-06-24",
+                "2023-06-25",
+                "2023-06-26",
+                "2023-06-27",
+                "2023-06-28",
+                "2023-06-29",
+                "2023-06-30",
+                "2023-07-01",
+                "2023-07-02",
+                "2023-07-03",
+                "2023-07-04",
+                "2023-07-05",
+                "2023-07-06",
+                "2023-07-07",
+                "2023-07-08",
+                "2023-07-09",
+                "2023-07-10",
+                "2023-07-11",
+                "2023-07-12",
+                "2023-07-13",
+                "2023-07-14",
+                "2023-07-15",
+                "2023-07-16",
+                "2023-07-17",
+                "2023-07-18",
+                "2023-07-19",
+                "2023-07-20",
+                "2023-07-21",
+                "2023-07-22",
+                "2023-07-23",
+                "2023-07-24",
+                "2023-07-25",
+                "2023-07-26",
+                "2023-07-27",
+                "2023-07-28",
+                "2023-07-29",
+                "2023-07-30",
+                "2023-07-31",
+                "2023-08-01",
+                "2023-08-02",
+                "2023-08-03",
+                "2023-08-04",
+                "2023-08-05",
+                "2023-08-06",
+                "2023-08-07",
+                "2023-08-08",
+                "2023-08-09",
+                "2023-08-10",
+                "2023-08-11",
+                "2023-08-12",
+                "2023-08-13",
+                "2023-08-14",
+                "2023-08-15",
+                "2023-08-16",
+                "2023-08-17",
+                "2023-08-18",
+                "2023-08-19",
+                "2023-08-20",
+                "2023-08-21",
+                "2023-08-22",
+                "2023-08-23",
+                "2023-08-24",
+                "2023-08-25",
+                "2023-08-26",
+                "2023-08-27",
+                "2023-08-28",
+                "2023-08-29",
+                "2023-08-30",
+                "2023-08-31",
+                "2023-09-01",
+                "2023-09-02",
+                "2023-09-03",
+                "2023-09-04",
+                "2023-09-05",
+                "2023-09-06",
+                "2023-09-07",
+                "2023-09-08",
+                "2023-09-09",
+                "2023-09-10",
+                "2023-09-11",
+                "2023-09-12",
+                "2023-09-13",
+                "2023-09-14",
+                "2023-09-15",
+                "2023-09-16",
+                "2023-09-17",
+                "2023-09-18",
+                "2023-09-19",
+                "2023-09-20",
+                "2023-09-21",
+                "2023-09-22",
+                "2023-09-23",
+                "2023-09-24",
+                "2023-09-25",
+                "2023-09-26",
+                "2023-09-27",
+                "2023-09-28",
+                "2023-09-29",
+                "2023-09-30",
+                "2023-10-01",
+                "2023-10-02",
+                "2023-10-03",
+                "2023-10-04",
+                "2023-10-05",
+                "2023-10-06",
+                "2023-10-07",
+                "2023-10-08",
+                "2023-10-09",
+                "2023-10-10",
+                "2023-10-11"
+            ],
+            "pet": [
+                0.009999999776482582,
+                0.030792957171797752,
+                0.018182311207056046,
+                0.02948763407766819,
+                0.011305322870612144,
+                0.009999999776482582,
+                0.03818231076002121,
+                0.018182311207056046,
+                0.018182311207056046,
+                0.018182311207056046,
+                0.03261064738035202,
+                0.023123012855648994,
+                0.0420982800424099,
+                0.024312429130077362,
+                0.008182311430573463,
+                0.02766994573175907,
+                0.03454693406820297,
+                0.018182311207056046,
+                0.02766994573175907,
+                0.011305322870612144,
+                0.03636462241411209,
+                0.047669943422079086,
+                0.04818231239914894,
+                0.03454693406820297,
+                0.047669943422079086,
+                0.019999999552965164,
+                0.035852257162332535,
+                0.052610646933317184,
+                0.039793841540813446,
+                0.05740559101104736,
+                0.0382501520216465,
+                0.02914126217365265,
+                0.06750795245170593,
+                0.053241610527038574,
+                0.07142391800880432,
+                0.05181768909096718,
+                0.047389354556798935,
+                0.04181768745183945,
+                0.05215621367096901,
+                0.08648321777582169,
+                0.10466553270816803,
+                0.1133602112531662,
+                0.10830090939998627,
+                0.12454693019390106,
+                0.1532416045665741,
+                0.16928061842918396,
+                0.16932563483715057,
+                0.1475079506635666,
+                0.033753976225852966,
+                0.02261064574122429,
+                0.02261064574122429,
+                0.11142392456531525,
+                0.14375397562980652,
+                0.11505930125713348,
+                0.042576517909765244,
+                0.04324160888791084,
+                0.053241610527038574,
+                0.05209828168153763,
+                0.12387257069349289,
+                0.1281823068857193,
+                0.03885667026042938,
+                0.039881400763988495,
+                0.051423922181129456,
+                0.0494876354932785,
+                0.02948763407766819,
+                0.051423922181129456,
+                0.05522118881344795,
+                0.1126105934381485,
+                0.13818225264549255,
+                0.1275513917207718,
+                0.129487544298172,
+                0.1426105946302414,
+                0.15818224847316742,
+                0.1599999964237213,
+                0.15818224847316742,
+                0.12818224728107452,
+                0.13636448979377747,
+                0.12142369151115417,
+                0.09142369031906128,
+                0.14324145019054413,
+                0.13636448979377747,
+                0.09687694907188416,
+                0.10442834347486496,
+                0.15687695145606995,
+                0.16687695682048798,
+                0.05948754400014877,
+                0.12818224728107452,
+                0.1613052934408188,
+                0.18130530416965485,
+                0.18312305212020874,
+                0.1932414472103119,
+                0.1937538981437683,
+                0.19687694311141968,
+                0.2013052999973297,
+                0.1786947101354599,
+                0.1299564093351364,
+                0.12319785356521606,
+                0.11936914920806885,
+                0.0919797420501709,
+                0.0581822469830513,
+                0.05130529776215553,
+                0.0694875419139862,
+                0.11687695235013962,
+                0.13648289442062378,
+                0.08197974413633347,
+                0.08830064535140991,
+                0.06494080275297165,
+                0.11067444831132889,
+                0.08494079858064651,
+                0.0581822469830513,
+                0.0788130983710289,
+                0.15960593521595,
+                0.1726105958223343,
+                0.1731230467557907,
+                0.17755140364170074,
+                0.10822584480047226,
+                0.06687694787979126,
+                0.15505920350551605,
+                0.08988160640001297,
+                0.09181775152683258,
+                0.05936914682388306,
+                0.08830064535140991,
+                0.16375389695167542,
+                0.13766978681087494,
+                0.07999999821186066,
+                0.08130529522895813,
+                0.15738940238952637,
+                0.18738940358161926,
+                0.19312304258346558,
+                0.12703894078731537,
+                0.1594875454902649,
+                0.09051245450973511,
+                0.05687694996595383,
+                0.15818224847316742,
+                0.13442835211753845,
+                0.1070389375090599,
+                0.1459704339504242,
+                0.1594875454902649,
+                0.10687694698572159,
+                0.1650591939687729,
+                0.12209814041852951,
+                0.1599999964237213,
+                0.17766979336738586,
+                0.10585203766822815,
+                0.14324145019054413,
+                0.1768769472837448,
+                0.11442834883928299,
+                0.12999999523162842,
+                0.16750779747962952,
+                0.08454674482345581,
+                0.1558520346879959,
+                0.0713052973151207,
+                0.14000000059604645,
+                0.13375389575958252,
+                0.11818224936723709,
+                0.15687695145606995,
+                0.10557164996862411,
+                0.10932555794715881,
+                0.1481822431087494,
+                0.16636449098587036,
+                0.08557165414094925,
+                0.05391589179635048,
+                0.13261058926582336,
+                0.0844283476471901,
+                0.11209814250469208,
+                0.10636449605226517,
+                0.11324144899845123,
+                0.12636449933052063,
+                0.07414796203374863,
+                0.12557165324687958,
+                0.07624609768390656,
+                0.07715733349323273,
+                0.07569004595279694,
+                0.12324144691228867,
+                0.10130529850721359,
+                0.1313052922487259,
+                0.15000000596046448,
+                0.061817754060029984,
+                0.04442834481596947,
+                0.10193614661693573,
+                0.10557164996862411,
+                0.07533486187458038,
+                0.05834423750638962,
+                0.04964953660964966,
+                0.10312304645776749,
+                0.13505919277668,
+                0.11142369359731674,
+                0.1276697963476181,
+                0.1257336437702179,
+                0.13079284131526947,
+                0.13948754966259003,
+                0.12272898852825165,
+                0.09142369031906128,
+                0.07857630401849747,
+                0.052610594779253006,
+                0.0623302087187767,
+                0.11244860291481018,
+                0.0750591978430748,
+                0.06403429061174393,
+                0.09557165205478668,
+                0.08869470655918121,
+                0.07494080066680908,
+                0.0660841092467308,
+                0.03573364391922951,
+                0.08079284429550171,
+                0.10818224400281906,
+                0.09442834556102753,
+                0.0623302087187767,
+                0.05233020707964897,
+                0.07296106219291687,
+                0.07999999821186066,
+                0.0881822481751442,
+                0.07755139470100403,
+                0.04869470372796059,
+                0.08687695115804672,
+                0.0844283476471901,
+                0.07624609768390656,
+                0.09000000357627869,
+                0.10000000149011612,
+                0.07999999821186066,
+                0.04818224906921387,
+                0.028182247653603554,
+                0.027551395818591118,
+                0.03130529820919037,
+                0.03130529820919037
+            ],
+            "precip": [
+                0.18005371,
+                0.11999512,
+                0,
+                0.6899414,
+                0.14001465,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0.17004395,
+                0.02999878,
+                0.010002136,
+                0.77001953,
+                0.5097656,
+                0,
+                0,
+                0.5498047,
+                0.11999512,
+                0.08001709,
+                0,
+                0,
+                0,
+                0.29003906,
+                0,
+                0.3701172,
+                0,
+                0.19995117,
+                0,
+                0.11999512,
+                0,
+                0.6699219,
+                0.17004395,
+                0,
+                0.099975586,
+                0.05999756,
+                0.95996094,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0.010002136,
+                0,
+                0,
+                0,
+                0,
+                0.16003418,
+                0.15002441,
+                0.11999512,
+                0.040008545,
+                0,
+                0,
+                1.3603516,
+                0.5498047,
+                0.08001709,
+                0.020004272,
+                0.16003418,
+                0,
+                0.11999512,
+                0.19995117,
+                1.6396484,
+                0.47998047,
+                0.11999512,
+                0.25,
+                0.20996094,
+                0.18005371,
+                0,
+                0.049987793,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0.020004272,
+                0,
+                0,
+                0,
+                0.27001953,
+                0.040008545,
+                0,
+                0,
+                0.090026855,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0.049987793,
+                0,
+                0,
+                0.040008545,
+                0.14001465,
+                0.099975586,
+                0.10998535,
+                0.10998535,
+                0,
+                0.05999756,
+                0.91015625,
+                0,
+                0.6899414,
+                0,
+                0.42993164,
+                0.02999878,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1.0703125,
+                0.32006836,
+                0.45996094,
+                0.049987793,
+                1.3798828,
+                0,
+                0,
+                0,
+                1.0302734,
+                0.32006836,
+                0.08001709,
+                0,
+                0,
+                0,
+                0.75,
+                0,
+                0.10998535,
+                1.7099609,
+                0.11999512,
+                0.040008545,
+                0.7402344,
+                0.05999756,
+                0.05999756,
+                0.08001709,
+                0.14001465,
+                0,
+                0,
+                0.32006836,
+                0.010002136,
+                0,
+                0.020004272,
+                0.23999023,
+                0.070007324,
+                0.010002136,
+                0.3100586,
+                0,
+                0.8198242,
+                0,
+                0,
+                0,
+                0,
+                1.5302734,
+                1.6796875,
+                0,
+                0.48999023,
+                0.75,
+                0.3100586,
+                0,
+                0.4699707,
+                0,
+                0.95996094,
+                0.099975586,
+                0.090026855,
+                0.5698242,
+                0,
+                1.3496094,
+                0.9301758,
+                0.020004272,
+                0.099975586,
+                0,
+                0,
+                0,
+                0.36010742,
+                0.090026855,
+                0.13000488,
+                0,
+                0.23999023,
+                0.4099121,
+                0.10998535,
+                0,
+                0,
+                0.02999878,
+                0.020004272,
+                0,
+                0,
+                0,
+                0.5698242,
+                0,
+                0.23999023,
+                0.099975586,
+                0,
+                0.17004395,
+                0.099975586,
+                0,
+                0,
+                0,
+                0.35009766,
+                0,
+                0.02999878,
+                0,
+                0,
+                0,
+                0.02999878,
+                0.049987793,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0.020004272,
+                1.3496094,
+                0.6298828,
+                0.3400000000000001,
+                0,
+                0
+            ],
+            "fcstLength": 3
+        };
+    }
+
+    const PLANTED_INDICATOR_OPTIONS = {
+        content: 'Planted',
+        color: '#51db32'
+    };
+    const TERMINATION_INDICATOR_OPTIONS = {
+        content: 'Terminated',
+        color: '#bf1111'
+    };
+    function createVerticalIndicator(idx, optsObj) {
+        return {
+            type: 'line',
+            drawTime: 'beforeDraw',
+            borderWidth: 1,
+            borderColor: optsObj.color,
+            adjustScaleRange: false,
+            xMin: idx,
+            xMax: idx,
+            label: {
+                content: optsObj.content,
+                drawTime: 'beforeDraw',
+                color: optsObj.color,
+                display: true,
+                position: 'end',
+                xAdjust: 5,
+                rotation: 90,
+                font: {
+                    size: '10px'
+                },
+                backgroundColor: 'transparent'
+            }
+        };
+    }
+    function constructNitrogenChartDetails(tins, testResults, dates, plantingDateIdx, terminationDateIdx) {
+        const THRESHOLDS = [25, 30];
+        const BAND_COLORS = [
+            '255,0,0',
+            '255,255,0',
+            '0,128,0'
+        ];
+        const EVENT_HIGHLIGHT_COLOR = '#FF3E00';
+        const finalValue = tins[tins.length - 1];
+        let finalValueIsIn = THRESHOLDS.findIndex(t => finalValue < t);
+        if (finalValueIsIn === -1)
+            finalValueIsIn = THRESHOLDS.length;
+        const tinAnnotations = {
+            annotations: {}
+        };
+        const plotBands = [{
+                yMax: THRESHOLDS[0],
+                yMin: undefined,
+                backgroundColor: `rgba(${BAND_COLORS[0]},0.1)`,
+                label: 'Apply 30lbs/acre twice, 3-4 weeks apart'
+            }, {
+                yMax: THRESHOLDS[1],
+                yMin: THRESHOLDS[0],
+                backgroundColor: `rgba(${BAND_COLORS[1]},0.1)`,
+                label: 'Apply 15lbs/acre twice, 3-4 weeks apart'
+            }, {
+                yMax: undefined,
+                yMin: THRESHOLDS[1],
+                backgroundColor: `rgba(${BAND_COLORS[2]},0.1)`,
+                label: 'No sidedress necessary'
+            }];
+        plotBands.forEach((pb, i) => tinAnnotations.annotations['box' + i] = {
+            type: 'box',
+            drawTime: 'beforeDraw',
+            borderWidth: 0,
+            adjustScaleRange: false,
+            yMax: pb.yMax,
+            yMin: pb.yMin,
+            backgroundColor: i === finalValueIsIn ? pb.backgroundColor : 'transparent',
+            label: {
+                content: pb.label,
+                drawTime: 'beforeDraw',
+                color: i === finalValueIsIn ? 'rgb(50,50,50)' : 'rgb(120,120,120)',
+                display: true,
+                position: { x: 'start', y: 'center' },
+                font: {
+                    size: '16px',
+                    weight: i === finalValueIsIn ? 'bold' : 'normal'
+                },
+                backgroundColor: 'transparent'
+            }
+        });
+        const plotLines = [{
+                yMin: THRESHOLDS[1],
+                yMax: THRESHOLDS[1],
+                label: 'Apply half sidedress'
+            }, {
+                yMin: THRESHOLDS[0],
+                yMax: THRESHOLDS[0],
+                label: 'Apply full sidedress'
+            }];
+        plotLines.forEach((pl, i) => tinAnnotations.annotations['line' + i] = Object.assign(Object.assign({ type: 'line', drawTime: 'beforeDraw', borderWidth: 1, borderColor: 'rgb(150,150,150)', adjustScaleRange: false }, pl), { label: {
+                content: pl.label,
+                drawTime: 'beforeDraw',
+                color: 'rgb(120,120,120)',
+                display: true,
+                position: 'end',
+                yAdjust: 10,
+                xAdjust: 10,
+                font: {
+                    size: '10px'
+                },
+                backgroundColor: 'transparent'
+            } }));
+        tinAnnotations.annotations['plantingDate'] = createVerticalIndicator(plantingDateIdx, PLANTED_INDICATOR_OPTIONS);
+        tinAnnotations.annotations['terminationDate'] = createVerticalIndicator(terminationDateIdx, TERMINATION_INDICATOR_OPTIONS);
+        return {
+            tinAnnotations,
+            tinPntColors: calcPointColors(tins, THRESHOLDS, BAND_COLORS),
+            tinPntBorders: calcPointBorders(testResults, dates, EVENT_HIGHLIGHT_COLOR)
+        };
+    }
+    function constructWaterChartDetails(thresholds, vwcs, applications, dates, plantingDateIdx, terminationDateIdx) {
+        const BAND_COLORS = [
+            '255,0,0',
+            '255,157,0',
+            '255,255,0',
+            '0,128,0'
+        ];
+        const EVENT_HIGHLIGHT_COLOR = 'rgb(71, 150, 255)';
+        const finalValue = vwcs[vwcs.length - 1];
+        let finalValueIsIn = thresholds.findIndex(t => finalValue < t);
+        if (finalValueIsIn === -1)
+            finalValueIsIn = thresholds.length - 1;
+        const vwcAnnotations = {
+            annotations: {}
+        };
+        const plotBands = [{
+                yMax: thresholds[0],
+                yMin: undefined,
+                backgroundColor: `rgba(${BAND_COLORS[0]},0.1)`,
+                label: 'Deficit, severe plant stress'
+            }, {
+                yMax: thresholds[1],
+                yMin: thresholds[0],
+                backgroundColor: `rgba(${BAND_COLORS[1]},0.1)`,
+                label: 'Deficit, plant stress likely'
+            }, {
+                yMax: thresholds[2],
+                yMin: thresholds[1],
+                backgroundColor: `rgba(${BAND_COLORS[2]},0.1)`,
+                label: 'Deficit, no plant stress'
+            }, {
+                yMax: undefined,
+                yMin: thresholds[2],
+                backgroundColor: `rgba(${BAND_COLORS[3]},0.1)`,
+                label: 'No deficit for plant'
+            }];
+        plotBands.forEach((pb, i) => vwcAnnotations.annotations['box' + i] = {
+            type: 'box',
+            drawTime: 'beforeDraw',
+            borderWidth: 0,
+            adjustScaleRange: false,
+            yMax: pb.yMax,
+            yMin: pb.yMin,
+            backgroundColor: i === finalValueIsIn ? pb.backgroundColor : 'transparent',
+            label: {
+                content: pb.label,
+                drawTime: 'beforeDraw',
+                color: i === finalValueIsIn ? 'rgb(50,50,50)' : 'rgb(120,120,120)',
+                display: true,
+                position: { x: 'start', y: 'center' },
+                font: {
+                    size: '16px',
+                    weight: i === finalValueIsIn ? 'bold' : 'normal'
+                },
+                backgroundColor: 'transparent'
+            }
+        });
+        const plotLines = [{
+                yMin: thresholds[3],
+                yMax: thresholds[3],
+                label: 'Saturated'
+            }, {
+                yMin: thresholds[2],
+                yMax: thresholds[2],
+                label: 'Field Capacity'
+            }, {
+                yMin: thresholds[1],
+                yMax: thresholds[1],
+                label: 'Plant Stress Begin'
+            }, {
+                yMin: thresholds[0],
+                yMax: thresholds[0],
+                label: 'Wilting Danger Exists'
+            }];
+        plotLines.forEach((pl, i) => vwcAnnotations.annotations['line' + i] = Object.assign(Object.assign({ type: 'line', drawTime: 'beforeDraw', borderWidth: 1, borderColor: 'rgb(150,150,150)', adjustScaleRange: false }, pl), { label: {
+                content: pl.label,
+                drawTime: 'beforeDraw',
+                color: 'rgb(120,120,120)',
+                display: true,
+                position: 'end',
+                yAdjust: 10,
+                xAdjust: 10,
+                font: {
+                    size: '10px'
+                },
+                backgroundColor: 'transparent'
+            } }));
+        // irrigationIdxs.forEach(idx => annotations.annotations['irri' + idx] = {
+        //   type: 'line',
+        //   drawTime: 'beforeDraw',
+        //   borderWidth: 1,
+        //   borderColor: 'rgb(150,150,250)',
+        //   adjustScaleRange: false,
+        //   xMin: idx,
+        //   xMax: idx,
+        //   label: {
+        //     content: 'Irrigation',
+        //     drawTime: 'beforeDraw',
+        //     color: 'rgb(120,120,220)',
+        //     display: true,
+        //     position: 'start',
+        //     yAdjust: 10,
+        //     xAdjust: 3,
+        //     rotation: 90,
+        //     font: {
+        //       size: '10px'
+        //     },
+        //     backgroundColor: 'transparent'
+        //   }
+        // });
+        vwcAnnotations.annotations['plantingDate'] = createVerticalIndicator(plantingDateIdx, PLANTED_INDICATOR_OPTIONS);
+        vwcAnnotations.annotations['terminationDate'] = createVerticalIndicator(terminationDateIdx, TERMINATION_INDICATOR_OPTIONS);
+        return {
+            vwcAnnotations,
+            vwcPntColors: calcPointColors(vwcs, thresholds, BAND_COLORS),
+            vwcPntBorders: calcPointBorders(applications, dates, EVENT_HIGHLIGHT_COLOR)
+        };
+    }
+    function calcPointColors(pnts, thresholds, colors) {
+        return pnts.map(p => {
+            for (let i = 0; i < thresholds.length; i++) {
+                if (p < thresholds[i]) {
+                    return `rgb(${colors[i]})`;
+                }
+                else if (i === thresholds.length - 1) {
+                    return `rgb(${colors[colors.length - 1]})`;
+                }
+            }
+        });
+    }
+    function calcPointBorders(eventsObj, datesArr, borderColor) {
+        const eventDates = Object.values(eventsObj).map((obj) => obj.date);
+        const borderColors = [];
+        const borderWidths = [];
+        for (let i = 0; i < datesArr.length; i++) {
+            const occurred = eventDates.includes(datesArr[i]);
+            borderColors.push(occurred ? borderColor : 'rgb(0,0,0)');
+            borderWidths.push(occurred ? 2 : 1);
+        }
+        return { borderColors, borderWidths };
+    }
+
+    const APP_NAME = 'high-tunnel-tomatoes';
+    const LOCATIONS_KEY = 'locations';
+    const ACTIVE_LOCATION_ID_KEY = 'active-location-id';
+    const OPTIONS_KEY = 'options';
+    function setStorage(key, newValue) {
+        localStorage.setItem(`${APP_NAME}-${key}`, JSON.stringify(newValue));
+    }
+    function getStorage(key) {
+        const stored = localStorage.getItem(`${APP_NAME}-${key}`);
+        if (stored)
+            return JSON.parse(stored);
+        else
+            return null;
+    }
+    function loadActiveLocationId() {
+        return getStorage(ACTIVE_LOCATION_ID_KEY);
+    }
+    function loadLocations() {
+        return getStorage(LOCATIONS_KEY);
+    }
+    function findKey(object, value) {
+        for (let prop in object) {
+            if (object.hasOwnProperty(prop)) {
+                if (object[prop] === value) {
+                    return prop;
+                }
+            }
+        }
+    }
+    function addLocationToStorage(currLocs, newLoc) {
+        let newLocs = null;
+        if (currLocs) {
+            const latMatch = findKey(currLocs, newLoc.lat);
+            const lonMatch = findKey(currLocs, newLoc.lon);
+            if (latMatch && lonMatch)
+                return newLocs;
+            newLocs = Object.assign(Object.assign({}, currLocs), { [newLoc.id]: newLoc });
+        }
+        else {
+            newLocs = { [newLoc.id]: newLoc };
+        }
+        setStorage(LOCATIONS_KEY, newLocs);
+        return newLocs;
+    }
+    function removeLocationFromStorage(currLocs, removeId) {
+        const newLocs = JSON.parse(JSON.stringify(currLocs));
+        delete newLocs[removeId];
+        setStorage(LOCATIONS_KEY, newLocs);
+        // Also delete corresponing location options
+        const options = loadOptions() || {};
+        if (Object.keys(options).includes(removeId)) {
+            delete options[removeId];
+            setStorage(OPTIONS_KEY, options);
+        }
+        return newLocs;
+    }
+    function updateActiveLocationIdInStorage(newId) {
+        setStorage(ACTIVE_LOCATION_ID_KEY, newId);
+        return newId;
+    }
+    function loadOptions() {
+        return getStorage(OPTIONS_KEY);
+    }
+    function updateOptionsInStorage(locId, newOptions) {
+        const options = loadOptions() || {};
+        options[locId] = newOptions;
+        setStorage(OPTIONS_KEY, options);
+    }
+
+    // Clamp date between 3/1 and 10/31
+    let todayDate = new Date();
+    if (todayDate.getMonth() > 9) {
+        todayDate = new Date(todayDate.getFullYear(), 9, 31);
+    }
+    else if (todayDate.getMonth() < 2) {
+        todayDate = new Date(todayDate.getFullYear() - 1, 9, 31);
+    }
+    const endDate = todayDate.toISOString().slice(0, 10);
+    // Handle showing loading screen
+    const isLoadingLocation = writable(false);
+    const isLoadingData = writable({
+        waterData: false,
+        soilCharacteristics: false,
+        nutrientModel: false
+    });
+    // Toggles the loading values, object is used to smooth loading (flashes in and out if single value toggling several times)
+    function changeLoading(key, setTo) {
+        isLoadingData.set(Object.assign(Object.assign({}, get_store_value(isLoadingData)), { [key]: setTo }));
+    }
+    const locations = writable(loadLocations());
+    const activeLocationId = writable(loadActiveLocationId());
+    const activeLocation = derived([locations, activeLocationId], ([$locations, $activeLocationId]) => {
+        if ($locations && $activeLocationId && Object.keys($locations).includes($activeLocationId)) {
+            isLoadingData.set(Object.assign(Object.assign({}, get_store_value(isLoadingData)), { waterData: true, soilCharacteristics: true, nutrientModel: true }));
+            return $locations[$activeLocationId];
+        }
+        else {
+            return null;
+        }
+    }, null);
+    // Fetches precip and PET data for location
+    const waterData = asyncDerived(activeLocation, async ($activeLocation) => {
+        let results = null;
+        if ($activeLocation) {
+            results = await getWaterData($activeLocation);
+            changeLoading('waterData', false);
+            changeLoading('nutrientModel', results === null ? false : true);
+        }
+        return results;
+    }, null);
+    // Fetches soil properties used in nutrient model
+    const soilCharacteristics = asyncDerived(activeLocation, async ($activeLocation) => {
+        let newSC = null;
+        if ($activeLocation) {
+            newSC = await getSoilCharacteristics();
+            let newUO = null;
+            const loaded = loadOptions();
+            if (loaded && Object.keys(loaded).includes($activeLocation.id)) {
+                newUO = loaded[$activeLocation.id];
+            }
+            else if (newSC) {
+                newUO = {
+                    waterCapacity: newSC.waterCapacity,
+                    initialOrganicMatter: newSC.organicMatter,
+                    plantingDate: null,
+                    terminationDate: null,
+                    applications: {
+                        123456: {
+                            id: 123456,
+                            date: '2023-03-01',
+                            waterAmount: 0,
+                            fastN: 60,
+                            mediumN: 60,
+                            slowN: 60,
+                            inorganicN: 0
+                        },
+                        123457: {
+                            id: 123457,
+                            date: '2023-05-06',
+                            waterAmount: 0.4,
+                            fastN: 10,
+                            mediumN: 0,
+                            slowN: 60,
+                            inorganicN: 0
+                        },
+                        123458: {
+                            id: 123458,
+                            date: '2023-05-12',
+                            waterAmount: 0,
+                            fastN: 0,
+                            mediumN: 30,
+                            slowN: 0,
+                            inorganicN: 60
+                        }
+                    },
+                    testResults: {
+                        4321: {
+                            id: 4321,
+                            date: '2023-05-01',
+                            organicMatter: 6,
+                            inorganicN: 50
+                        },
+                        5432: {
+                            id: 5432,
+                            date: '2023-06-01',
+                            organicMatter: 8,
+                            inorganicN: 100
+                        },
+                        6543: {
+                            id: 6543,
+                            date: '2023-10-10',
+                            organicMatter: 3,
+                            inorganicN: 20
+                        }
+                    }
+                };
+            }
+            userOptions.set(newUO);
+        }
+        changeLoading('soilCharacteristics', false);
+        return newSC;
+    }, null);
+    const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA)));
+    let userOptions = writable(null);
+    // Run the nutrient model when options or precip/PET data change
+    const nutrientData = derived([devOptions, userOptions, waterData], ([$devOptions, $userOptions, $waterData]) => {
+        let results = null;
+        if ($devOptions && $userOptions && $waterData) {
+            const nmRes = handleRunNutrientModel($devOptions, $userOptions, $waterData);
+            const { prewiltingpoint, stressthreshold, fieldcapacity, saturation } = $devOptions.soilmoistureoptions[$userOptions.waterCapacity];
+            const vwcThresholds = [
+                prewiltingpoint,
+                stressthreshold,
+                fieldcapacity,
+                saturation
+            ].map(t => Math.round(t / 18 * 1000) / 1000);
+            const plantingDateIdx = $waterData.dates.findIndex(d => d === $userOptions.plantingDate);
+            const terminationDateIdx = $waterData.dates.findIndex(d => d === $userOptions.terminationDate);
+            const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, $userOptions.applications, $waterData.dates, plantingDateIdx, terminationDateIdx);
+            const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $waterData.dates, plantingDateIdx, terminationDateIdx);
+            results = Object.assign(Object.assign(Object.assign({}, nmRes), vwcChartDetails), tinChartDetails);
+        }
+        if ($devOptions && $userOptions && $waterData !== null) {
+            changeLoading('nutrientModel', false);
+        }
+        return results;
+    }, null);
+    const hoverIdxPos = writable(null);
+    const hoverXPos = writable(null);
+    const isZoomed = writable(true);
+    const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
+        if ($hoverIdxPos === null)
+            return null;
+        const { applications, testResults } = get_store_value(userOptions);
+        const { dates, vwc, tin, fastN, mediumN, slowN } = get_store_value(nutrientData);
+        const date = dates[$hoverIdxPos];
+        const vwcValue = vwc[$hoverIdxPos];
+        const tinPpmValue = tin[$hoverIdxPos];
+        const fastNPpmValue = fastN[$hoverIdxPos];
+        const mediumNPpmValue = mediumN[$hoverIdxPos];
+        const slowNPpmValue = slowN[$hoverIdxPos];
+        const application = Object.values(applications).find((obj) => obj.date === date);
+        const testResult = Object.values(testResults).find((obj) => obj.date === date);
+        return {
+            date,
+            vwc: vwcValue,
+            tin: { ppm: tinPpmValue, lbsPerAcre: tinPpmValue * 2 },
+            fastN: { ppm: fastNPpmValue, lbsPerAcre: fastNPpmValue * 2 },
+            mediumN: { ppm: mediumNPpmValue, lbsPerAcre: mediumNPpmValue * 2 },
+            slowN: { ppm: slowNPpmValue, lbsPerAcre: slowNPpmValue * 2 },
+            application: application || null,
+            testResult: testResult || null
+        };
+    }, null);
+    // Spinner colors:
+    // #FF3E00 - red
+    // #40B3FF - blue
+    // #676778 - gray
+
     /*!
      * @kurkle/color v0.3.2
      * https://github.com/kurkle/color#readme
@@ -11432,1619 +13154,6 @@ var app = (function () {
     	}
     }
 
-    const subscriber_queue = [];
-    /**
-     * Creates a `Readable` store that allows reading by subscription.
-     * @param value initial value
-     * @param {StartStopNotifier} [start]
-     */
-    function readable(value, start) {
-        return {
-            subscribe: writable(value, start).subscribe
-        };
-    }
-    /**
-     * Create a `Writable` store that allows both updating and reading by subscription.
-     * @param {*=}value initial value
-     * @param {StartStopNotifier=} start
-     */
-    function writable(value, start = noop) {
-        let stop;
-        const subscribers = new Set();
-        function set(new_value) {
-            if (safe_not_equal(value, new_value)) {
-                value = new_value;
-                if (stop) { // store is ready
-                    const run_queue = !subscriber_queue.length;
-                    for (const subscriber of subscribers) {
-                        subscriber[1]();
-                        subscriber_queue.push(subscriber, value);
-                    }
-                    if (run_queue) {
-                        for (let i = 0; i < subscriber_queue.length; i += 2) {
-                            subscriber_queue[i][0](subscriber_queue[i + 1]);
-                        }
-                        subscriber_queue.length = 0;
-                    }
-                }
-            }
-        }
-        function update(fn) {
-            set(fn(value));
-        }
-        function subscribe(run, invalidate = noop) {
-            const subscriber = [run, invalidate];
-            subscribers.add(subscriber);
-            if (subscribers.size === 1) {
-                stop = start(set) || noop;
-            }
-            run(value);
-            return () => {
-                subscribers.delete(subscriber);
-                if (subscribers.size === 0 && stop) {
-                    stop();
-                    stop = null;
-                }
-            };
-        }
-        return { set, update, subscribe };
-    }
-    function derived(stores, fn, initial_value) {
-        const single = !Array.isArray(stores);
-        const stores_array = single
-            ? [stores]
-            : stores;
-        const auto = fn.length < 2;
-        return readable(initial_value, (set) => {
-            let started = false;
-            const values = [];
-            let pending = 0;
-            let cleanup = noop;
-            const sync = () => {
-                if (pending) {
-                    return;
-                }
-                cleanup();
-                const result = fn(single ? values[0] : values, set);
-                if (auto) {
-                    set(result);
-                }
-                else {
-                    cleanup = is_function(result) ? result : noop;
-                }
-            };
-            const unsubscribers = stores_array.map((store, i) => subscribe(store, (value) => {
-                values[i] = value;
-                pending &= ~(1 << i);
-                if (started) {
-                    sync();
-                }
-            }, () => {
-                pending |= (1 << i);
-            }));
-            started = true;
-            sync();
-            return function stop() {
-                run_all(unsubscribers);
-                cleanup();
-                // We need to set this to false because callbacks can still happen despite having unsubscribed:
-                // Callbacks might already be placed in the queue which doesn't know it should no longer
-                // invoke this derived store.
-                started = false;
-            };
-        });
-    }
-
-    function asyncDerived (stores, callback, initial_value) {
-        let guard;
-        return derived(stores, ($stores, set) => {
-            const inner = guard = {};
-            set(initial_value);
-            Promise.resolve(callback($stores)).then(value => {
-                if (guard === inner) {
-                    set(value);
-                }
-            });
-        }, initial_value);
-    }
-
-    const rootDepthInches = 18;
-    const rootDepthMeters = convertInToM(rootDepthInches);
-    const somKN = 0.000083;
-    const fastKN = 0.1;
-    const mediumKN = 0.003;
-    const slowKN = 0.0002;
-    function convertInToM(inches) {
-        return inches / 39.37;
-    }
-    function convertLbAcreToKgM2(lbPerAcre) {
-        // lbs/acre * 0.0001121 = kg/m2
-        return lbPerAcre * 0.0001121;
-    }
-    function convertKgM2ToLbAcre(kgPerM2) {
-        // kg/m2 / 0.0001121 = lbs/acre
-        return kgPerM2 / 0.0001121;
-    }
-    function convertOMPercentToLbAcre(percent) {
-        // 1% OM = 2000lb/acre
-        return percent * 2000;
-    }
-    function convertLbAcreToOMPercent(lbPerAcre) {
-        // 2000lb/acre = 1% OM
-        return lbPerAcre / 2000;
-    }
-    function calcTNV(tnKgs, plantUptakeTheta) {
-        return tnKgs / (rootDepthMeters * plantUptakeTheta);
-    }
-    function calcPlantUptake(tnV, petInches) {
-        const petMeters = convertInToM(petInches);
-        return tnV * petMeters;
-    }
-    function calcTransported(tnV, drainageInches) {
-        const drainageMeters = convertInToM(drainageInches);
-        return tnV * drainageMeters;
-    }
-    function balanceNitrogen(vwc, fc, mp, drainage, hasPlants, pet, tin, som, fastN, mediumN, slowN) {
-        //  -------------------------------------------------------------
-        //  Calculate soil inorganic nitrogen (lbs/acre) from daily volumetric water content, 
-        //    nitrogen application dates and amounts, and an initial soil organic matter percentage
-        //
-        //  initOM                : initial soil organic matter (%)
-        //  nitrogenApplications  : array of [date as 'YYYY-MM-DD', amount of nitrogen applied (lbs/acre)]
-        //  water                 : daily array of [date as 'YYYY-MM-DD', volumetric water content as decimal, 24hr drainage (inches)]
-        //
-        //  -------------------------------------------------------------
-        const gTheta = (fc - mp) / (vwc - mp); //// supposed to be equation from Josef
-        const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
-        //// Valid output of model
-        //// add flags or something to indicate application and test event
-        //// style the nitrogen chart, organize them too
-        let somLbs = convertOMPercentToLbAcre(som);
-        const somMineralizedLbs = gTheta * somKN * somLbs;
-        const fastMineralizedLbs = gTheta * fastKN * fastN;
-        const mediumMineralizedLbs = gTheta * mediumKN * mediumN;
-        const slowMineralizedLbs = gTheta * slowKN * slowN;
-        const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
-        const tnKgs = convertLbAcreToKgM2(tnLbs);
-        const tnV = calcTNV(tnKgs, plantUptakeTheta);
-        const UN = hasPlants ? calcPlantUptake(tnV, pet) : 0;
-        const QN = calcTransported(tnV, drainage);
-        const newTinKgs = tnKgs - UN - QN;
-        const newTinLbs = convertKgM2ToLbAcre(newTinKgs);
-        const otherRemoved = (convertKgM2ToLbAcre(UN) + convertKgM2ToLbAcre(QN)) / 4;
-        return {
-            tin: newTinLbs,
-            som: convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved),
-            fastN: fastN - fastMineralizedLbs - otherRemoved,
-            mediumN: mediumN - mediumMineralizedLbs - otherRemoved,
-            slowN: slowN - slowMineralizedLbs - otherRemoved
-        };
-    }
-    // //// Next steps:
-    // //// // add irrigation stuff into water model
-    // //// // stub a temporary irrigation schedule for now
-    // //// // build out nitrogen model
-    // //// // account for planting date (no plant uptake if not planted)
-    // //// // account for nitrogen applications
-    // //// // account for testing adjustments
-
-    // ------------------------------------------ //
-    // All derived from Brian's csf-waterdef code //
-    // ------------------------------------------ //
-    var SoilMoistureOptionLevel;
-    (function (SoilMoistureOptionLevel) {
-        SoilMoistureOptionLevel["LOW"] = "low";
-        SoilMoistureOptionLevel["MEDIUM"] = "medium";
-        SoilMoistureOptionLevel["HIGH"] = "high";
-    })(SoilMoistureOptionLevel || (SoilMoistureOptionLevel = {}));
-    // soildata:
-    // soil moisture and drainage characteristics for different levels of soil water capacity
-    // const timesSixInch = 2;
-    const timesSixInch = 3;
-    const rounder = 100;
-    const multiplier = timesSixInch * rounder;
-    const SOIL_DATA = {
-        soilmoistureoptions: {
-            low: {
-                wiltingpoint: Math.round(0.4 * multiplier) / rounder,
-                prewiltingpoint: Math.round(0.64 * multiplier) / rounder,
-                stressthreshold: Math.round(0.8 * multiplier) / rounder,
-                fieldcapacity: Math.round(1.2 * multiplier) / rounder,
-                saturation: Math.round(2.6 * multiplier) / rounder
-            },
-            medium: {
-                wiltingpoint: Math.round(0.6 * multiplier) / rounder,
-                prewiltingpoint: Math.round(0.945 * multiplier) / rounder,
-                stressthreshold: Math.round(1.175 * multiplier) / rounder,
-                fieldcapacity: Math.round(1.75 * multiplier) / rounder,
-                saturation: Math.round(2.9 * multiplier) / rounder
-            },
-            high: {
-                wiltingpoint: Math.round(0.85 * multiplier) / rounder,
-                prewiltingpoint: Math.round(1.30 * multiplier) / rounder,
-                stressthreshold: Math.round(1.6 * multiplier) / rounder,
-                fieldcapacity: Math.round(2.35 * multiplier) / rounder,
-                saturation: Math.round(3.25 * multiplier) / rounder
-            },
-            kc: {
-                Lini: {
-                    name: 'Initial Growth Stage Length',
-                    value: 30,
-                    description: 'length (days) of initial growth stage'
-                },
-                Ldev: {
-                    name: 'Development Growth Stage Length',
-                    value: 40,
-                    description: 'length (days) of development growth stage'
-                },
-                Lmid: {
-                    name: 'Mature Growth Stage Length',
-                    value: 80,
-                    description: 'length (days) of middle (mature) growth stage'
-                },
-                Llate: {
-                    name: 'Late Growth Stage Length',
-                    value: 30,
-                    description: 'length (days) of late growth stage'
-                },
-                Kcini: {
-                    name: 'Initial Growth Stage Crop Coefficient',
-                    value: 0.60,
-                    description: 'crop coefficient for initial growth stage'
-                },
-                Kcmid: {
-                    name: 'Mature Growth Stage Crop Coefficient',
-                    value: 1.15,
-                    description: 'crop coefficient for middle (mature) growth stage'
-                },
-                Kcend: {
-                    name: 'End of Season Crop Coefficient',
-                    value: 0.80,
-                    description: 'crop coefficient at end of growing season'
-                }
-            },
-            p: 0.5,
-            petAdj: 0.55
-        },
-        soildrainageoptions: {
-            low: { daysToDrainToFcFromSat: 0.125 },
-            medium: { daysToDrainToFcFromSat: 1.0 },
-            high: { daysToDrainToFcFromSat: 2.0 },
-        }
-    };
-    function getCropCoeff(numdays, devSD) {
-        // -----------------------------------------------------------------------------------------
-        // Calculate crop coefficient for a specific growth stage of plant.
-        // - Coefficients for initial, middle and end growth stages are assigned directly.
-        // - Coefficients for development and late growth stages are determined by linear interpolation between coefficients for surrounding stages.
-        // Refer to FAO-56 single crop coefficient reference, along with other sources for values specific for the Northeast US.
-        //
-        // numdays : days since planting, used to estimate the growth stage.
-        // Lini  : length (days) of initial growth stage
-        // Ldev  : length (days) of development growth stage
-        // Lmid  : length (days) of middle (mature) growth stage
-        // Llate : length (days) of late growth stage
-        // Kcini : crop coefficient for initial growth stage
-        // Kcmid : crop coefficient for middle (mature) growth stage
-        // Kcend : crop coefficient at end of growing season
-        // Kc    : crop coefficient for this specific growth stage - we use Kc to adjust grass reference ET
-        // -----------------------------------------------------------------------------------------
-        const { Lini, Ldev, Lmid, Llate, Kcini, Kcmid, Kcend } = devSD.soilmoistureoptions.kc;
-        let Kc = null;
-        if (numdays <= Lini.value) {
-            // before planting or in initial growth stage
-            Kc = Kcini.value;
-        }
-        else if ((numdays > Lini.value) && (numdays < (Lini.value + Ldev.value))) {
-            // in development growth stage
-            // linearly interpolate between Kcini and Kcmid to find Kc within development stage
-            Kc = Kcini.value + (numdays - Lini.value) * (Kcmid.value - Kcini.value) / Ldev.value;
-        }
-        else if ((numdays >= (Lini.value + Ldev.value)) && (numdays <= (Lini.value + Ldev.value + Lmid.value))) {
-            // in middle (mature) growth stage
-            Kc = Kcmid.value;
-        }
-        else if ((numdays > (Lini.value + Ldev.value + Lmid.value)) && (numdays < (Lini.value + Ldev.value + Lmid.value + Llate.value))) {
-            // in late growth stage
-            // linearly interpolate between Kcmid and Kcend to find Kc within late growth stage
-            Kc = Kcmid.value - (numdays - (Lini.value + Ldev.value + Lmid.value)) * (Kcmid.value - Kcend.value) / Llate.value;
-        }
-        else {
-            // at end of growing season
-            Kc = Kcend.value;
-        }
-        return Kc;
-    }
-    function getPotentialDailyDrainage(soilCharacteristics, drainagecap) {
-        // -----------------------------------------------------------------------------------------
-        // Calculate potential daily drainage of soil
-        // -----------------------------------------------------------------------------------------
-        return ((soilCharacteristics.saturation -
-            soilCharacteristics.fieldcapacity) /
-            drainagecap);
-    }
-    function getTawForPlant(soilCharacteristics) {
-        // -----------------------------------------------------------------------------------------
-        // Calculate total available water (TAW) for plant, defined here as:
-        // soil moisture at field capacity minus soil moisture at wilting point
-        // -----------------------------------------------------------------------------------------
-        return soilCharacteristics.fieldcapacity - soilCharacteristics.wiltingpoint;
-    }
-    function getWaterStressCoeff(Dr, TAW, p) {
-        // -----------------------------------------------------------------------------------------
-        // Calculate coefficient for adjusting ET when accounting for decreased ET during water stress conditions.
-        // Refer to FAO-56 eq 84, pg 169
-        // Dr  : the antecedent water deficit (in)
-        // TAW : total available (in) water for the plant (soil moisture at field capacity minus soil moisture at wilting point).
-        // p   : at what fraction between field capacity and wilting point do we start applying this water stress factor.
-        // Ks  : water stress coefficient
-        // -----------------------------------------------------------------------------------------
-        let Ks = null;
-        Dr = -1 * Dr;
-        Ks = Dr <= p * TAW ? 1 : (TAW - Dr) / ((1 - p) * TAW);
-        Ks = Math.max(Ks, 0);
-        return Ks;
-    }
-    function runNutrientModel(precip, pet, soilcap, plantingDate, initialOrganicMatter, applications, testResults, dates, devSD) {
-        // -----------------------------------------------------------------------------------------
-        // Calculate daily volumetric water content (inches H2O / inch soil) from daily precipitation, evapotranspiration, soil drainage and runoff.
-        //
-        // Soil water amount is:
-        //    - bounded below by the wilting point
-        //    - bounded above by saturation
-        //
-        //  precip          : daily precipitation array (in) : (NRCC ACIS grid 3)
-        //  pet             : daily potential evapotranspiration array (in) : (grass reference PET obtained from NRCC MORECS model output)
-        //  soilcap         : soil water capacity ('high','medium','low')
-        //  plantingDate    : date crop was planted
-        //  irrigationIdxs  : array of indices where the user irrigated
-        //
-        // -----------------------------------------------------------------------------------------
-        const soil_options = devSD.soilmoistureoptions;
-        // Calculate number of days since planting, negative value means current days in loop below is before planting
-        let daysSincePlanting = Math.floor((Date.parse(plantingDate.getFullYear() + '-03-01') - plantingDate.getTime()) / 86400000);
-        // Initialize running tally of the amount of water in the soil
-        let deficit = 0;
-        const fc = soil_options[soilcap].fieldcapacity;
-        // Initialize variables for storing nitrogen values between days
-        let tin = 0;
-        let som = initialOrganicMatter;
-        let fastN = 0;
-        let mediumN = 0;
-        let slowN = 0;
-        // Initialize output arrays
-        const vwcDaily = [(deficit + fc) / 18];
-        const dd = [deficit];
-        const tinDaily = [0];
-        const fastDaily = [0];
-        const mediumDaily = [0];
-        const slowDaily = [0];
-        // Calculate daily drainage rate that occurs when soil water content is between saturation and field capacity
-        const dailyPotentialDrainageRate = getPotentialDailyDrainage(soil_options[soilcap], devSD.soildrainageoptions[soilcap].daysToDrainToFcFromSat);
-        // Loop through all days, starting with the second day (we already have the values for the initial day from model initialization)
-        for (let idx = 1; idx < pet.length; idx++) {
-            const date = dates[idx];
-            daysSincePlanting += 1;
-            // Calculate Ks, the water stress coefficient, using antecedent deficit
-            const TAW = getTawForPlant(soil_options[soilcap]);
-            const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
-            // Calculate Kc, the crop coefficient
-            const Kc = getCropCoeff(daysSincePlanting, devSD);
-            // Adjust water movement to account for calculated and provided variables
-            const totalDailyPET = -1 * pet[idx] * devSD.soilmoistureoptions.petAdj * Kc * Ks;
-            // const totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
-            let totalDailyPrecip = 0;
-            const todaysApplications = Object.values(applications).filter(obj => obj.date === date);
-            if (todaysApplications.length) {
-                todaysApplications.forEach(obj => {
-                    totalDailyPrecip += obj.waterAmount;
-                    fastN += obj.fastN;
-                    mediumN += obj.mediumN;
-                    slowN += obj.slowN;
-                    tin += obj.inorganicN;
-                });
-            }
-            // Convert daily rates to hourly rates. For this simple model, rates are constant throughout the day.
-            // For precip   : this assumption is about all we can do without hourly observations
-            // For PET      : this assumption isn't great. Something following diurnal cycle would be best.
-            // For drainage : this assumption is okay
-            // ALL HOURLY RATES POSITIVE
-            const hourlyPrecip = totalDailyPrecip / 24;
-            const hourlyPET = (-1 * totalDailyPET) / 24;
-            const hourlyPotentialDrainage = dailyPotentialDrainageRate / 24;
-            // Initialize daily drainage total for nitrogen calculations
-            let drainageTotal = 0;
-            for (let hr = 1; hr <= 24; hr++) {
-                // Calculate hourly drainage estimate. It is bounded by the potential drainage rate and available
-                // water in excess of the field capacity. We assume drainage does not occur below field capacity.
-                let hourlyDrainage;
-                if (deficit > 0) {
-                    hourlyDrainage = Math.min(deficit, hourlyPotentialDrainage);
-                }
-                else {
-                    hourlyDrainage = 0;
-                }
-                drainageTotal += hourlyDrainage;
-                // Adjust soil water based on hourly water budget.
-                // soil water is bound by saturation (soil can't be super-saturated). This effectively reduces soil water by hourly runoff as well.
-                deficit = Math.min(deficit + hourlyPrecip - hourlyPET - hourlyDrainage, soil_options[soilcap].saturation - fc);
-                // soil water is bound by wilting point, but calculations should never reach wilting point based on this model. We bound it below for completeness.
-                // In the real world, soil water is able to reach wilting point. The user should note that soil water values NEAR the wilting point
-                // from this model should be interpreted as 'danger of wilting exists'.
-                deficit = Math.max(deficit, soil_options[soilcap].wiltingpoint - fc);
-            }
-            // Do something with drainageTotal and calculate tinDaily value
-            const todaysTests = Object.values(testResults).filter(obj => obj.date === date);
-            if (todaysTests.length) {
-                const lastTest = todaysTests[todaysTests.length - 1];
-                som = lastTest.organicMatter;
-                tin = lastTest.inorganicN;
-            }
-            const vwc = (deficit + fc) / 18;
-            const mp = 0; //// matric potential that Josef needs to give for high, medium, low
-            ({ tin, som, fastN, mediumN, slowN } = balanceNitrogen(vwc, fc / 18, mp, drainageTotal, daysSincePlanting >= 0, -1 * totalDailyPET, tin, som, fastN, mediumN, slowN));
-            dd.push(deficit);
-            vwcDaily.push(Math.round(vwc * 1000) / 1000);
-            tinDaily.push(Math.round((tin / 2) * 1000) / 1000);
-            fastDaily.push(Math.round((fastN / 2) * 1000) / 1000);
-            mediumDaily.push(Math.round((mediumN / 2) * 1000) / 1000);
-            slowDaily.push(Math.round((slowN / 2) * 1000) / 1000);
-        }
-        return {
-            vwc: vwcDaily,
-            tin: tinDaily,
-            fastN: fastDaily,
-            mediumN: mediumDaily,
-            slowN: slowDaily,
-            dd
-        };
-    }
-    const handleRunNutrientModel = (devOptions, userOptions, waterData) => {
-        const { waterCapacity, plantingDate, applications, testResults, initialOrganicMatter } = userOptions;
-        const { dates, pet, precip } = waterData;
-        return Object.assign(Object.assign({}, runNutrientModel(precip, pet, waterCapacity, plantingDate ? new Date(plantingDate + 'T00:00') : new Date(), initialOrganicMatter, applications, testResults, dates, devOptions)), { dates });
-    };
-
-    async function getSoilCharacteristics(activeLocation) {
-        // const soilColumnData = await fetchSoilColumnDataViaPostRest([activeLocation.lon, activeLocation.lat]);
-        // if (!soilColumnData) return null;
-        // const soilTypes = convertIntoSoilTypes(soilColumnData);
-        // const [ avgClay, avgSand, avgSilt, avgOM, avgBD ] = calcAvgSoilComp(soilTypes);
-        // return {
-        //   waterCapacity: categorizeTexture(avgClay, avgSand, avgSilt),
-        //   composition: { clay: Math.round(avgClay), sand: Math.round(avgSand), silt: Math.round(avgSilt) },
-        //   organicMatter: Math.round(avgOM),
-        //   bulkDensity: avgBD
-        // };
-        return {
-            "waterCapacity": "medium",
-            "composition": {
-                "clay": 1,
-                "sand": 21,
-                "silt": 11
-            },
-            "organicMatter": 1,
-            "bulkDensity": 0.43910569105691066
-        };
-    }
-
-    async function getWaterData({ lat, lon }, date) {
-        // try {
-        //   // fetch PET and precip
-        //   let [
-        //     { precip, precipFcstLength },
-        //     { pet, petFcstLength}
-        //   ] = await Promise.all([
-        //     fetchPrecip(lat, lon, date),
-        //     fetchPETData(lat, lon, date.slice(0,4))
-        //   ]);
-        //   // adjust pet and precip to have matching lengths
-        //   const lengthDiff = precip.length - pet.length;
-        //   if (lengthDiff > 0) {
-        //     precipFcstLength = Math.max(precipFcstLength - lengthDiff, 0);
-        //     precip = precip.slice(0, precip.length - lengthDiff)
-        //   } else if (lengthDiff < 0) {
-        //     petFcstLength = Math.max(petFcstLength - lengthDiff, 0);
-        //     pet = pet.slice(0, pet.length - lengthDiff)
-        //   }
-        //   // instantiate results obj and determine the number of forecast days that will be in results
-        //   const results = {
-        //     dates: [],
-        //     pet: [],
-        //     precip: [],
-        //     fcstLength: Math.max(precipFcstLength, petFcstLength)
-        //   };
-        //   // loop through data pushing to results obj and ensuring that the dates match
-        //   for (let i = 0; i < pet.length; i++) {
-        //     const [petDate, petValue] = pet[i];
-        //     const [precipDate, precipValue] = precip[i];
-        //     if (petDate === precipDate) {
-        //       results.dates.push(petDate);
-        //       results.pet.push(petValue);
-        //       results.precip.push(precipValue);
-        //     } else {
-        //       throw 'PET and precip dates do not match';
-        //     }
-        //   }
-        //   return results;
-        // } catch (e) {
-        //   console.error(e);
-        //   return null;
-        // }
-        return {
-            "dates": [
-                "2023-03-01",
-                "2023-03-02",
-                "2023-03-03",
-                "2023-03-04",
-                "2023-03-05",
-                "2023-03-06",
-                "2023-03-07",
-                "2023-03-08",
-                "2023-03-09",
-                "2023-03-10",
-                "2023-03-11",
-                "2023-03-12",
-                "2023-03-13",
-                "2023-03-14",
-                "2023-03-15",
-                "2023-03-16",
-                "2023-03-17",
-                "2023-03-18",
-                "2023-03-19",
-                "2023-03-20",
-                "2023-03-21",
-                "2023-03-22",
-                "2023-03-23",
-                "2023-03-24",
-                "2023-03-25",
-                "2023-03-26",
-                "2023-03-27",
-                "2023-03-28",
-                "2023-03-29",
-                "2023-03-30",
-                "2023-03-31",
-                "2023-04-01",
-                "2023-04-02",
-                "2023-04-03",
-                "2023-04-04",
-                "2023-04-05",
-                "2023-04-06",
-                "2023-04-07",
-                "2023-04-08",
-                "2023-04-09",
-                "2023-04-10",
-                "2023-04-11",
-                "2023-04-12",
-                "2023-04-13",
-                "2023-04-14",
-                "2023-04-15",
-                "2023-04-16",
-                "2023-04-17",
-                "2023-04-18",
-                "2023-04-19",
-                "2023-04-20",
-                "2023-04-21",
-                "2023-04-22",
-                "2023-04-23",
-                "2023-04-24",
-                "2023-04-25",
-                "2023-04-26",
-                "2023-04-27",
-                "2023-04-28",
-                "2023-04-29",
-                "2023-04-30",
-                "2023-05-01",
-                "2023-05-02",
-                "2023-05-03",
-                "2023-05-04",
-                "2023-05-05",
-                "2023-05-06",
-                "2023-05-07",
-                "2023-05-08",
-                "2023-05-09",
-                "2023-05-10",
-                "2023-05-11",
-                "2023-05-12",
-                "2023-05-13",
-                "2023-05-14",
-                "2023-05-15",
-                "2023-05-16",
-                "2023-05-17",
-                "2023-05-18",
-                "2023-05-19",
-                "2023-05-20",
-                "2023-05-21",
-                "2023-05-22",
-                "2023-05-23",
-                "2023-05-24",
-                "2023-05-25",
-                "2023-05-26",
-                "2023-05-27",
-                "2023-05-28",
-                "2023-05-29",
-                "2023-05-30",
-                "2023-05-31",
-                "2023-06-01",
-                "2023-06-02",
-                "2023-06-03",
-                "2023-06-04",
-                "2023-06-05",
-                "2023-06-06",
-                "2023-06-07",
-                "2023-06-08",
-                "2023-06-09",
-                "2023-06-10",
-                "2023-06-11",
-                "2023-06-12",
-                "2023-06-13",
-                "2023-06-14",
-                "2023-06-15",
-                "2023-06-16",
-                "2023-06-17",
-                "2023-06-18",
-                "2023-06-19",
-                "2023-06-20",
-                "2023-06-21",
-                "2023-06-22",
-                "2023-06-23",
-                "2023-06-24",
-                "2023-06-25",
-                "2023-06-26",
-                "2023-06-27",
-                "2023-06-28",
-                "2023-06-29",
-                "2023-06-30",
-                "2023-07-01",
-                "2023-07-02",
-                "2023-07-03",
-                "2023-07-04",
-                "2023-07-05",
-                "2023-07-06",
-                "2023-07-07",
-                "2023-07-08",
-                "2023-07-09",
-                "2023-07-10",
-                "2023-07-11",
-                "2023-07-12",
-                "2023-07-13",
-                "2023-07-14",
-                "2023-07-15",
-                "2023-07-16",
-                "2023-07-17",
-                "2023-07-18",
-                "2023-07-19",
-                "2023-07-20",
-                "2023-07-21",
-                "2023-07-22",
-                "2023-07-23",
-                "2023-07-24",
-                "2023-07-25",
-                "2023-07-26",
-                "2023-07-27",
-                "2023-07-28",
-                "2023-07-29",
-                "2023-07-30",
-                "2023-07-31",
-                "2023-08-01",
-                "2023-08-02",
-                "2023-08-03",
-                "2023-08-04",
-                "2023-08-05",
-                "2023-08-06",
-                "2023-08-07",
-                "2023-08-08",
-                "2023-08-09",
-                "2023-08-10",
-                "2023-08-11",
-                "2023-08-12",
-                "2023-08-13",
-                "2023-08-14",
-                "2023-08-15",
-                "2023-08-16",
-                "2023-08-17",
-                "2023-08-18",
-                "2023-08-19",
-                "2023-08-20",
-                "2023-08-21",
-                "2023-08-22",
-                "2023-08-23",
-                "2023-08-24",
-                "2023-08-25",
-                "2023-08-26",
-                "2023-08-27",
-                "2023-08-28",
-                "2023-08-29",
-                "2023-08-30",
-                "2023-08-31",
-                "2023-09-01",
-                "2023-09-02",
-                "2023-09-03",
-                "2023-09-04",
-                "2023-09-05",
-                "2023-09-06",
-                "2023-09-07",
-                "2023-09-08",
-                "2023-09-09",
-                "2023-09-10",
-                "2023-09-11",
-                "2023-09-12",
-                "2023-09-13",
-                "2023-09-14",
-                "2023-09-15",
-                "2023-09-16",
-                "2023-09-17",
-                "2023-09-18",
-                "2023-09-19",
-                "2023-09-20",
-                "2023-09-21",
-                "2023-09-22",
-                "2023-09-23",
-                "2023-09-24",
-                "2023-09-25",
-                "2023-09-26",
-                "2023-09-27",
-                "2023-09-28",
-                "2023-09-29",
-                "2023-09-30",
-                "2023-10-01",
-                "2023-10-02",
-                "2023-10-03",
-                "2023-10-04",
-                "2023-10-05",
-                "2023-10-06",
-                "2023-10-07",
-                "2023-10-08",
-                "2023-10-09",
-                "2023-10-10",
-                "2023-10-11"
-            ],
-            "pet": [
-                0.009999999776482582,
-                0.030792957171797752,
-                0.018182311207056046,
-                0.02948763407766819,
-                0.011305322870612144,
-                0.009999999776482582,
-                0.03818231076002121,
-                0.018182311207056046,
-                0.018182311207056046,
-                0.018182311207056046,
-                0.03261064738035202,
-                0.023123012855648994,
-                0.0420982800424099,
-                0.024312429130077362,
-                0.008182311430573463,
-                0.02766994573175907,
-                0.03454693406820297,
-                0.018182311207056046,
-                0.02766994573175907,
-                0.011305322870612144,
-                0.03636462241411209,
-                0.047669943422079086,
-                0.04818231239914894,
-                0.03454693406820297,
-                0.047669943422079086,
-                0.019999999552965164,
-                0.035852257162332535,
-                0.052610646933317184,
-                0.039793841540813446,
-                0.05740559101104736,
-                0.0382501520216465,
-                0.02914126217365265,
-                0.06750795245170593,
-                0.053241610527038574,
-                0.07142391800880432,
-                0.05181768909096718,
-                0.047389354556798935,
-                0.04181768745183945,
-                0.05215621367096901,
-                0.08648321777582169,
-                0.10466553270816803,
-                0.1133602112531662,
-                0.10830090939998627,
-                0.12454693019390106,
-                0.1532416045665741,
-                0.16928061842918396,
-                0.16932563483715057,
-                0.1475079506635666,
-                0.033753976225852966,
-                0.02261064574122429,
-                0.02261064574122429,
-                0.11142392456531525,
-                0.14375397562980652,
-                0.11505930125713348,
-                0.042576517909765244,
-                0.04324160888791084,
-                0.053241610527038574,
-                0.05209828168153763,
-                0.12387257069349289,
-                0.1281823068857193,
-                0.03885667026042938,
-                0.039881400763988495,
-                0.051423922181129456,
-                0.0494876354932785,
-                0.02948763407766819,
-                0.051423922181129456,
-                0.05522118881344795,
-                0.1126105934381485,
-                0.13818225264549255,
-                0.1275513917207718,
-                0.129487544298172,
-                0.1426105946302414,
-                0.15818224847316742,
-                0.1599999964237213,
-                0.15818224847316742,
-                0.12818224728107452,
-                0.13636448979377747,
-                0.12142369151115417,
-                0.09142369031906128,
-                0.14324145019054413,
-                0.13636448979377747,
-                0.09687694907188416,
-                0.10442834347486496,
-                0.15687695145606995,
-                0.16687695682048798,
-                0.05948754400014877,
-                0.12818224728107452,
-                0.1613052934408188,
-                0.18130530416965485,
-                0.18312305212020874,
-                0.1932414472103119,
-                0.1937538981437683,
-                0.19687694311141968,
-                0.2013052999973297,
-                0.1786947101354599,
-                0.1299564093351364,
-                0.12319785356521606,
-                0.11936914920806885,
-                0.0919797420501709,
-                0.0581822469830513,
-                0.05130529776215553,
-                0.0694875419139862,
-                0.11687695235013962,
-                0.13648289442062378,
-                0.08197974413633347,
-                0.08830064535140991,
-                0.06494080275297165,
-                0.11067444831132889,
-                0.08494079858064651,
-                0.0581822469830513,
-                0.0788130983710289,
-                0.15960593521595,
-                0.1726105958223343,
-                0.1731230467557907,
-                0.17755140364170074,
-                0.10822584480047226,
-                0.06687694787979126,
-                0.15505920350551605,
-                0.08988160640001297,
-                0.09181775152683258,
-                0.05936914682388306,
-                0.08830064535140991,
-                0.16375389695167542,
-                0.13766978681087494,
-                0.07999999821186066,
-                0.08130529522895813,
-                0.15738940238952637,
-                0.18738940358161926,
-                0.19312304258346558,
-                0.12703894078731537,
-                0.1594875454902649,
-                0.09051245450973511,
-                0.05687694996595383,
-                0.15818224847316742,
-                0.13442835211753845,
-                0.1070389375090599,
-                0.1459704339504242,
-                0.1594875454902649,
-                0.10687694698572159,
-                0.1650591939687729,
-                0.12209814041852951,
-                0.1599999964237213,
-                0.17766979336738586,
-                0.10585203766822815,
-                0.14324145019054413,
-                0.1768769472837448,
-                0.11442834883928299,
-                0.12999999523162842,
-                0.16750779747962952,
-                0.08454674482345581,
-                0.1558520346879959,
-                0.0713052973151207,
-                0.14000000059604645,
-                0.13375389575958252,
-                0.11818224936723709,
-                0.15687695145606995,
-                0.10557164996862411,
-                0.10932555794715881,
-                0.1481822431087494,
-                0.16636449098587036,
-                0.08557165414094925,
-                0.05391589179635048,
-                0.13261058926582336,
-                0.0844283476471901,
-                0.11209814250469208,
-                0.10636449605226517,
-                0.11324144899845123,
-                0.12636449933052063,
-                0.07414796203374863,
-                0.12557165324687958,
-                0.07624609768390656,
-                0.07715733349323273,
-                0.07569004595279694,
-                0.12324144691228867,
-                0.10130529850721359,
-                0.1313052922487259,
-                0.15000000596046448,
-                0.061817754060029984,
-                0.04442834481596947,
-                0.10193614661693573,
-                0.10557164996862411,
-                0.07533486187458038,
-                0.05834423750638962,
-                0.04964953660964966,
-                0.10312304645776749,
-                0.13505919277668,
-                0.11142369359731674,
-                0.1276697963476181,
-                0.1257336437702179,
-                0.13079284131526947,
-                0.13948754966259003,
-                0.12272898852825165,
-                0.09142369031906128,
-                0.07857630401849747,
-                0.052610594779253006,
-                0.0623302087187767,
-                0.11244860291481018,
-                0.0750591978430748,
-                0.06403429061174393,
-                0.09557165205478668,
-                0.08869470655918121,
-                0.07494080066680908,
-                0.0660841092467308,
-                0.03573364391922951,
-                0.08079284429550171,
-                0.10818224400281906,
-                0.09442834556102753,
-                0.0623302087187767,
-                0.05233020707964897,
-                0.07296106219291687,
-                0.07999999821186066,
-                0.0881822481751442,
-                0.07755139470100403,
-                0.04869470372796059,
-                0.08687695115804672,
-                0.0844283476471901,
-                0.07624609768390656,
-                0.09000000357627869,
-                0.10000000149011612,
-                0.07999999821186066,
-                0.04818224906921387,
-                0.028182247653603554,
-                0.027551395818591118,
-                0.03130529820919037,
-                0.03130529820919037
-            ],
-            "precip": [
-                0.18005371,
-                0.11999512,
-                0,
-                0.6899414,
-                0.14001465,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0.17004395,
-                0.02999878,
-                0.010002136,
-                0.77001953,
-                0.5097656,
-                0,
-                0,
-                0.5498047,
-                0.11999512,
-                0.08001709,
-                0,
-                0,
-                0,
-                0.29003906,
-                0,
-                0.3701172,
-                0,
-                0.19995117,
-                0,
-                0.11999512,
-                0,
-                0.6699219,
-                0.17004395,
-                0,
-                0.099975586,
-                0.05999756,
-                0.95996094,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0.010002136,
-                0,
-                0,
-                0,
-                0,
-                0.16003418,
-                0.15002441,
-                0.11999512,
-                0.040008545,
-                0,
-                0,
-                1.3603516,
-                0.5498047,
-                0.08001709,
-                0.020004272,
-                0.16003418,
-                0,
-                0.11999512,
-                0.19995117,
-                1.6396484,
-                0.47998047,
-                0.11999512,
-                0.25,
-                0.20996094,
-                0.18005371,
-                0,
-                0.049987793,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0.020004272,
-                0,
-                0,
-                0,
-                0.27001953,
-                0.040008545,
-                0,
-                0,
-                0.090026855,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0.049987793,
-                0,
-                0,
-                0.040008545,
-                0.14001465,
-                0.099975586,
-                0.10998535,
-                0.10998535,
-                0,
-                0.05999756,
-                0.91015625,
-                0,
-                0.6899414,
-                0,
-                0.42993164,
-                0.02999878,
-                0,
-                0,
-                0,
-                0,
-                0,
-                1.0703125,
-                0.32006836,
-                0.45996094,
-                0.049987793,
-                1.3798828,
-                0,
-                0,
-                0,
-                1.0302734,
-                0.32006836,
-                0.08001709,
-                0,
-                0,
-                0,
-                0.75,
-                0,
-                0.10998535,
-                1.7099609,
-                0.11999512,
-                0.040008545,
-                0.7402344,
-                0.05999756,
-                0.05999756,
-                0.08001709,
-                0.14001465,
-                0,
-                0,
-                0.32006836,
-                0.010002136,
-                0,
-                0.020004272,
-                0.23999023,
-                0.070007324,
-                0.010002136,
-                0.3100586,
-                0,
-                0.8198242,
-                0,
-                0,
-                0,
-                0,
-                1.5302734,
-                1.6796875,
-                0,
-                0.48999023,
-                0.75,
-                0.3100586,
-                0,
-                0.4699707,
-                0,
-                0.95996094,
-                0.099975586,
-                0.090026855,
-                0.5698242,
-                0,
-                1.3496094,
-                0.9301758,
-                0.020004272,
-                0.099975586,
-                0,
-                0,
-                0,
-                0.36010742,
-                0.090026855,
-                0.13000488,
-                0,
-                0.23999023,
-                0.4099121,
-                0.10998535,
-                0,
-                0,
-                0.02999878,
-                0.020004272,
-                0,
-                0,
-                0,
-                0.5698242,
-                0,
-                0.23999023,
-                0.099975586,
-                0,
-                0.17004395,
-                0.099975586,
-                0,
-                0,
-                0,
-                0.35009766,
-                0,
-                0.02999878,
-                0,
-                0,
-                0,
-                0.02999878,
-                0.049987793,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0.020004272,
-                1.3496094,
-                0.6298828,
-                0.3400000000000001,
-                0,
-                0
-            ],
-            "fcstLength": 3
-        };
-    }
-
-    const BAND_COLORS = [
-        '255,0,0',
-        '255,157,0',
-        '255,255,0',
-        '0,128,0'
-    ];
-    // export function constructNitrogenChartAnnotations(thresholds, finalValue, ) {
-    // }
-    function constructWaterChartAnnotations(thresholds, finalValue) {
-        const finalValueIsIn = thresholds.findIndex((t, i) => {
-            if (finalValue < t) {
-                return true;
-            }
-            else if (i === thresholds.length - 1) {
-                return true;
-            }
-            else {
-                return false;
-            }
-        });
-        const annotations = {
-            annotations: {}
-        };
-        const plotBands = [{
-                yMax: thresholds[0],
-                yMin: undefined,
-                backgroundColor: `rgba(${BAND_COLORS[0]},0.1)`,
-                label: 'Deficit, severe plant stress'
-            }, {
-                yMax: thresholds[1],
-                yMin: thresholds[0],
-                backgroundColor: `rgba(${BAND_COLORS[1]},0.1)`,
-                label: 'Deficit, plant stress likely'
-            }, {
-                yMax: thresholds[2],
-                yMin: thresholds[1],
-                backgroundColor: `rgba(${BAND_COLORS[2]},0.1)`,
-                label: 'Deficit, no plant stress'
-            }, {
-                yMax: undefined,
-                yMin: thresholds[2],
-                backgroundColor: `rgba(${BAND_COLORS[3]},0.1)`,
-                label: 'No deficit for plant'
-            }];
-        plotBands.forEach((pb, i) => annotations.annotations['box' + i] = {
-            type: 'box',
-            drawTime: 'beforeDraw',
-            borderWidth: 0,
-            adjustScaleRange: false,
-            yMax: pb.yMax,
-            yMin: pb.yMin,
-            backgroundColor: i === finalValueIsIn ? pb.backgroundColor : 'transparent',
-            label: {
-                content: pb.label,
-                drawTime: 'beforeDraw',
-                color: i === finalValueIsIn ? 'rgb(50,50,50)' : 'rgb(120,120,120)',
-                display: true,
-                position: { x: 'start', y: 'center' },
-                font: {
-                    size: '16px',
-                    weight: i === finalValueIsIn ? 'bold' : 'normal'
-                },
-                backgroundColor: 'transparent'
-            }
-        });
-        const plotLines = [{
-                yMin: thresholds[3],
-                yMax: thresholds[3],
-                label: 'Saturated'
-            }, {
-                yMin: thresholds[2],
-                yMax: thresholds[2],
-                label: 'Field Capacity'
-            }, {
-                yMin: thresholds[1],
-                yMax: thresholds[1],
-                label: 'Plant Stress Begin'
-            }, {
-                yMin: thresholds[0],
-                yMax: thresholds[0],
-                label: 'Wilting Danger Exists'
-            }];
-        plotLines.forEach((pl, i) => annotations.annotations['line' + i] = Object.assign(Object.assign({ type: 'line', drawTime: 'beforeDraw', borderWidth: 1, borderColor: 'rgb(150,150,150)', adjustScaleRange: false }, pl), { label: {
-                content: pl.label,
-                drawTime: 'beforeDraw',
-                color: 'rgb(120,120,120)',
-                display: true,
-                position: 'end',
-                yAdjust: 10,
-                xAdjust: 10,
-                font: {
-                    size: '10px'
-                },
-                backgroundColor: 'transparent'
-            } }));
-        // irrigationIdxs.forEach(idx => annotations.annotations['irri' + idx] = {
-        //   type: 'line',
-        //   drawTime: 'beforeDraw',
-        //   borderWidth: 1,
-        //   borderColor: 'rgb(150,150,250)',
-        //   adjustScaleRange: false,
-        //   xMin: idx,
-        //   xMax: idx,
-        //   label: {
-        //     content: 'Irrigation',
-        //     drawTime: 'beforeDraw',
-        //     color: 'rgb(120,120,220)',
-        //     display: true,
-        //     position: 'start',
-        //     yAdjust: 10,
-        //     xAdjust: 3,
-        //     rotation: 90,
-        //     font: {
-        //       size: '10px'
-        //     },
-        //     backgroundColor: 'transparent'
-        //   }
-        // });
-        return annotations;
-    }
-    function calcPointColors(pnts, thresholds) {
-        return pnts.map(p => {
-            for (let i = 0; i < thresholds.length; i++) {
-                if (p < thresholds[i] || i === thresholds.length - 1) {
-                    return `rgb(${BAND_COLORS[i]})`;
-                }
-            }
-        });
-    }
-    function calcPointBorders(eventsObj, datesArr) {
-        const eventDates = Object.values(eventsObj).map((obj) => obj.date);
-        const borderColors = [];
-        const borderWidths = [];
-        for (let i = 0; i < datesArr.length; i++) {
-            const irrigated = eventDates.includes(datesArr[i]);
-            borderColors.push(irrigated ? 'rgb(71, 150, 255)' : 'rgb(0,0,0)');
-            borderWidths.push(irrigated ? 2 : 1);
-        }
-        return { borderColors, borderWidths };
-    }
-
-    const APP_NAME = 'high-tunnel-tomatoes';
-    const LOCATIONS_KEY = 'locations';
-    const ACTIVE_LOCATION_ID_KEY = 'active-location-id';
-    const OPTIONS_KEY = 'options';
-    function setStorage(key, newValue) {
-        localStorage.setItem(`${APP_NAME}-${key}`, JSON.stringify(newValue));
-    }
-    function getStorage(key) {
-        const stored = localStorage.getItem(`${APP_NAME}-${key}`);
-        if (stored)
-            return JSON.parse(stored);
-        else
-            return null;
-    }
-    function loadActiveLocationId() {
-        return getStorage(ACTIVE_LOCATION_ID_KEY);
-    }
-    function loadLocations() {
-        return getStorage(LOCATIONS_KEY);
-    }
-    function findKey(object, value) {
-        for (let prop in object) {
-            if (object.hasOwnProperty(prop)) {
-                if (object[prop] === value) {
-                    return prop;
-                }
-            }
-        }
-    }
-    function addLocationToStorage(currLocs, newLoc) {
-        let newLocs = null;
-        if (currLocs) {
-            const latMatch = findKey(currLocs, newLoc.lat);
-            const lonMatch = findKey(currLocs, newLoc.lon);
-            if (latMatch && lonMatch)
-                return newLocs;
-            newLocs = Object.assign(Object.assign({}, currLocs), { [newLoc.id]: newLoc });
-        }
-        else {
-            newLocs = { [newLoc.id]: newLoc };
-        }
-        setStorage(LOCATIONS_KEY, newLocs);
-        return newLocs;
-    }
-    function removeLocationFromStorage(currLocs, removeId) {
-        const newLocs = JSON.parse(JSON.stringify(currLocs));
-        delete newLocs[removeId];
-        setStorage(LOCATIONS_KEY, newLocs);
-        // Also delete corresponing location options
-        const options = loadOptions() || {};
-        if (Object.keys(options).includes(removeId)) {
-            delete options[removeId];
-            setStorage(OPTIONS_KEY, options);
-        }
-        return newLocs;
-    }
-    function updateActiveLocationIdInStorage(newId) {
-        setStorage(ACTIVE_LOCATION_ID_KEY, newId);
-        return newId;
-    }
-    function loadOptions() {
-        return getStorage(OPTIONS_KEY);
-    }
-    function updateOptionsInStorage(locId, newOptions) {
-        const options = loadOptions() || {};
-        options[locId] = newOptions;
-        setStorage(OPTIONS_KEY, options);
-    }
-
-    // Clamp date between 3/1 and 10/31
-    let todayDate = new Date();
-    if (todayDate.getMonth() > 9) {
-        todayDate = new Date(todayDate.getFullYear(), 9, 31);
-    }
-    else if (todayDate.getMonth() < 2) {
-        todayDate = new Date(todayDate.getFullYear() - 1, 9, 31);
-    }
-    const endDate = todayDate.toISOString().slice(0, 10);
-    // Handle showing loading screen
-    const isLoadingLocation = writable(false);
-    const isLoadingData = writable({
-        waterData: false,
-        soilCharacteristics: false,
-        nutrientModel: false
-    });
-    // Toggles the loading values, object is used to smooth loading (flashes in and out if single value toggling several times)
-    function changeLoading(key, setTo) {
-        isLoadingData.set(Object.assign(Object.assign({}, get_store_value(isLoadingData)), { [key]: setTo }));
-    }
-    const locations = writable(loadLocations());
-    const activeLocationId = writable(loadActiveLocationId());
-    const activeLocation = derived([locations, activeLocationId], ([$locations, $activeLocationId]) => {
-        if ($locations && $activeLocationId && Object.keys($locations).includes($activeLocationId)) {
-            isLoadingData.set(Object.assign(Object.assign({}, get_store_value(isLoadingData)), { waterData: true, soilCharacteristics: true, nutrientModel: true }));
-            return $locations[$activeLocationId];
-        }
-        else {
-            return null;
-        }
-    }, null);
-    // Fetches precip and PET data for location
-    const waterData = asyncDerived(activeLocation, async ($activeLocation) => {
-        let results = null;
-        if ($activeLocation) {
-            results = await getWaterData($activeLocation);
-            changeLoading('waterData', false);
-            changeLoading('nutrientModel', results === null ? false : true);
-        }
-        return results;
-    }, null);
-    // Fetches soil properties used in nutrient model
-    const soilCharacteristics = asyncDerived(activeLocation, async ($activeLocation) => {
-        let newSC = null;
-        if ($activeLocation) {
-            newSC = await getSoilCharacteristics();
-            let newUO = null;
-            const loaded = loadOptions();
-            if (loaded && Object.keys(loaded).includes($activeLocation.id)) {
-                newUO = loaded[$activeLocation.id];
-            }
-            else if (newSC) {
-                newUO = {
-                    waterCapacity: newSC.waterCapacity,
-                    initialOrganicMatter: newSC.organicMatter,
-                    plantingDate: null,
-                    applications: {
-                        123456: {
-                            id: 123456,
-                            date: '2023-03-01',
-                            waterAmount: 0,
-                            fastN: 60,
-                            mediumN: 60,
-                            slowN: 60,
-                            inorganicN: 0
-                        },
-                        123457: {
-                            id: 123457,
-                            date: '2023-05-06',
-                            waterAmount: 0.4,
-                            fastN: 10,
-                            mediumN: 0,
-                            slowN: 60,
-                            inorganicN: 0
-                        },
-                        123458: {
-                            id: 123458,
-                            date: '2023-05-12',
-                            waterAmount: 0,
-                            fastN: 0,
-                            mediumN: 30,
-                            slowN: 0,
-                            inorganicN: 60
-                        }
-                    },
-                    testResults: {
-                        4321: {
-                            id: 4321,
-                            date: '2023-05-01',
-                            organicMatter: 6,
-                            inorganicN: 50
-                        },
-                        5432: {
-                            id: 5432,
-                            date: '2023-06-01',
-                            organicMatter: 8,
-                            inorganicN: 100
-                        },
-                        6543: {
-                            id: 6543,
-                            date: '2023-10-10',
-                            organicMatter: 3,
-                            inorganicN: 20
-                        }
-                    }
-                };
-            }
-            userOptions.set(newUO);
-        }
-        changeLoading('soilCharacteristics', false);
-        return newSC;
-    }, null);
-    const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA)));
-    let userOptions = writable(null);
-    // Run the nutrient model when options or precip/PET data change
-    const nutrientData = derived([devOptions, userOptions, waterData], ([$devOptions, $userOptions, $waterData]) => {
-        let results = null;
-        if ($devOptions && $userOptions && $waterData) {
-            const nmRes = handleRunNutrientModel($devOptions, $userOptions, $waterData);
-            const finalValue = nmRes.vwc.slice(-1)[0];
-            const { prewiltingpoint, stressthreshold, fieldcapacity, saturation } = $devOptions.soilmoistureoptions[$userOptions.waterCapacity];
-            const thresholds = [
-                prewiltingpoint,
-                stressthreshold,
-                fieldcapacity,
-                saturation
-            ].map(t => Math.round(t / 18 * 1000) / 1000);
-            // const nitrogenPntBorders = Object.values($userOptions.testResults).map((obj: { date: string }) => $waterData.dates.findIndex(d => d === obj.date));
-            const vwcAnnotations = constructWaterChartAnnotations(thresholds, finalValue);
-            const vwcPntColors = calcPointColors(nmRes.vwc, thresholds);
-            const vwcPntBorders = calcPointBorders($userOptions.applications, $waterData.dates);
-            // const ddThresholds = [
-            //   prewiltingpoint - fieldcapacity,
-            //   stressthreshold - fieldcapacity,
-            //   fieldcapacity - fieldcapacity,
-            //   saturation - fieldcapacity
-            // ];
-            // const ddAnnotations = constructWaterChartAnnotations(ddThresholds, nmRes.dd.slice(-1)[0]);
-            // const ddPntColors = calcPointColors(nmRes.dd, ddThresholds);
-            results = Object.assign(Object.assign({}, nmRes), { vwcPntColors, vwcPntBorders, vwcAnnotations });
-        }
-        if ($devOptions && $userOptions && $waterData !== null) {
-            changeLoading('nutrientModel', false);
-        }
-        return results;
-    }, null);
-    const hoverIdxPos = writable(null);
-    const hoverXPos = writable(null);
-    const isZoomed = writable(true);
-    const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
-        if ($hoverIdxPos === null)
-            return null;
-        const { applications, testResults } = get_store_value(userOptions);
-        const { dates, vwc, tin, fastN, mediumN, slowN } = get_store_value(nutrientData);
-        const date = dates[$hoverIdxPos];
-        const vwcValue = vwc[$hoverIdxPos];
-        const tinPpmValue = tin[$hoverIdxPos];
-        const fastNPpmValue = fastN[$hoverIdxPos];
-        const mediumNPpmValue = mediumN[$hoverIdxPos];
-        const slowNPpmValue = slowN[$hoverIdxPos];
-        const application = Object.values(applications).find((obj) => obj.date === date);
-        const testResult = Object.values(testResults).find((obj) => obj.date === date);
-        return {
-            date,
-            vwc: vwcValue,
-            tin: { ppm: tinPpmValue, lbsPerAcre: tinPpmValue * 2 },
-            fastN: { ppm: fastNPpmValue, lbsPerAcre: fastNPpmValue * 2 },
-            mediumN: { ppm: mediumNPpmValue, lbsPerAcre: mediumNPpmValue * 2 },
-            slowN: { ppm: slowNPpmValue, lbsPerAcre: slowNPpmValue * 2 },
-            application: application || null,
-            testResult: testResult || null
-        };
-    }, null);
-    // Spinner colors:
-    // #FF3E00 - red
-    // #40B3FF - blue
-    // #676778 - gray
-
     /*!
     * chartjs-plugin-annotation v3.0.1
     * https://www.chartjs.org/chartjs-plugin-annotation/index
@@ -19814,7 +19923,7 @@ var app = (function () {
     const { Object: Object_1$6 } = globals;
     const file$x = "src/components/LineChart.svelte";
 
-    // (163:2) {#if showResetZoomBtn}
+    // (175:2) {#if showResetZoomBtn}
     function create_if_block$l(ctx) {
     	let div;
     	let button;
@@ -19823,8 +19932,8 @@ var app = (function () {
     	button = new Button({
     			props: {
     				btnType: "orange",
-    				hidden: !/*$isZoomed*/ ctx[4],
-    				onClick: /*func_2*/ ctx[10],
+    				hidden: !/*$isZoomed*/ ctx[3],
+    				onClick: /*func_2*/ ctx[11],
     				$$slots: { default: [create_default_slot$d] },
     				$$scope: { ctx }
     			},
@@ -19836,7 +19945,7 @@ var app = (function () {
     			div = element("div");
     			create_component(button.$$.fragment);
     			attr_dev(div, "class", "btn-container svelte-cj9ofz");
-    			add_location(div, file$x, 163, 4, 3809);
+    			add_location(div, file$x, 175, 4, 4185);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -19845,10 +19954,10 @@ var app = (function () {
     		},
     		p: function update(ctx, dirty) {
     			const button_changes = {};
-    			if (dirty & /*$isZoomed*/ 16) button_changes.hidden = !/*$isZoomed*/ ctx[4];
-    			if (dirty & /*chart*/ 4) button_changes.onClick = /*func_2*/ ctx[10];
+    			if (dirty & /*$isZoomed*/ 8) button_changes.hidden = !/*$isZoomed*/ ctx[3];
+    			if (dirty & /*chart*/ 4) button_changes.onClick = /*func_2*/ ctx[11];
 
-    			if (dirty & /*$$scope*/ 4096) {
+    			if (dirty & /*$$scope*/ 16384) {
     				button_changes.$$scope = { dirty, ctx };
     			}
 
@@ -19873,14 +19982,14 @@ var app = (function () {
     		block,
     		id: create_if_block$l.name,
     		type: "if",
-    		source: "(163:2) {#if showResetZoomBtn}",
+    		source: "(175:2) {#if showResetZoomBtn}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (164:31) <Button btnType='orange' hidden={!$isZoomed} onClick={() => handleResetZoom(chart)}>
+    // (176:31) <Button btnType='orange' hidden={!$isZoomed} onClick={() => handleResetZoom(chart)}>
     function create_default_slot$d(ctx) {
     	let t;
 
@@ -19900,7 +20009,7 @@ var app = (function () {
     		block,
     		id: create_default_slot$d.name,
     		type: "slot",
-    		source: "(164:31) <Button btnType='orange' hidden={!$isZoomed} onClick={() => handleResetZoom(chart)}>",
+    		source: "(176:31) <Button btnType='orange' hidden={!$isZoomed} onClick={() => handleResetZoom(chart)}>",
     		ctx
     	});
 
@@ -19915,14 +20024,14 @@ var app = (function () {
     	let current;
 
     	function chart_1_chart_binding(value) {
-    		/*chart_1_chart_binding*/ ctx[9](value);
+    		/*chart_1_chart_binding*/ ctx[10](value);
     	}
 
     	let chart_1_props = {
     		type: "line",
     		data: /*data*/ ctx[0],
-    		options: /*allOptions*/ ctx[3],
-    		plugins: [{ afterDraw: /*func*/ ctx[8] }, { beforeDraw: func_1$2 }]
+    		options: /*baseOptions*/ ctx[5],
+    		plugins: [{ afterDraw: /*func*/ ctx[9] }, { beforeDraw: func_1$2 }]
     	};
 
     	if (/*chart*/ ctx[2] !== void 0) {
@@ -19940,7 +20049,7 @@ var app = (function () {
     			t = space();
     			if (if_block) if_block.c();
     			attr_dev(div, "class", "chart-container svelte-cj9ofz");
-    			add_location(div, file$x, 134, 0, 2981);
+    			add_location(div, file$x, 146, 0, 3356);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -19955,8 +20064,7 @@ var app = (function () {
     		p: function update(ctx, [dirty]) {
     			const chart_1_changes = {};
     			if (dirty & /*data*/ 1) chart_1_changes.data = /*data*/ ctx[0];
-    			if (dirty & /*allOptions*/ 8) chart_1_changes.options = /*allOptions*/ ctx[3];
-    			if (dirty & /*$hoverXPos*/ 32) chart_1_changes.plugins = [{ afterDraw: /*func*/ ctx[8] }, { beforeDraw: func_1$2 }];
+    			if (dirty & /*$hoverXPos*/ 16) chart_1_changes.plugins = [{ afterDraw: /*func*/ ctx[9] }, { beforeDraw: func_1$2 }];
 
     			if (!updating_chart && dirty & /*chart*/ 4) {
     				updating_chart = true;
@@ -20028,23 +20136,72 @@ var app = (function () {
     };
 
     function instance$s($$self, $$props, $$invalidate) {
-    	let allOptions;
     	let $isZoomed;
     	let $hoverXPos;
     	let $hoverIdxPos;
     	validate_store(isZoomed, 'isZoomed');
-    	component_subscribe($$self, isZoomed, $$value => $$invalidate(4, $isZoomed = $$value));
+    	component_subscribe($$self, isZoomed, $$value => $$invalidate(3, $isZoomed = $$value));
     	validate_store(hoverXPos, 'hoverXPos');
-    	component_subscribe($$self, hoverXPos, $$value => $$invalidate(5, $hoverXPos = $$value));
+    	component_subscribe($$self, hoverXPos, $$value => $$invalidate(4, $hoverXPos = $$value));
     	validate_store(hoverIdxPos, 'hoverIdxPos');
-    	component_subscribe($$self, hoverIdxPos, $$value => $$invalidate(11, $hoverIdxPos = $$value));
+    	component_subscribe($$self, hoverIdxPos, $$value => $$invalidate(12, $hoverIdxPos = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('LineChart', slots, []);
     	Chart$1.register(annotation, CategoryScale, LineController, LineElement, LinearScale, PointElement, plugin);
     	let { data } = $$props;
-    	let { options } = $$props;
+    	let { plugins } = $$props;
+    	let { yAxisLabel } = $$props;
     	let { showResetZoomBtn } = $$props;
     	let chart;
+
+    	const baseOptions = {
+    		plugins: {
+    			zoom: {
+    				zoom: {
+    					drag: {
+    						enabled: true,
+    						backgroundColor: 'rgba(150,150,150,0.5)'
+    					},
+    					mode: 'x',
+    					onZoomComplete({ chart }) {
+    						set_store_value(isZoomed, $isZoomed = true, $isZoomed);
+
+    						for (const k of Object.keys(Chart$1.instances)) {
+    							const c = Chart$1.instances[k];
+
+    							if (c.id !== chart.id && c.options.plugins.zoom.zoom) {
+    								c.options.scales.x.min = Math.trunc(chart.scales.x.min);
+    								c.options.scales.x.max = Math.trunc(chart.scales.x.max);
+    								c.update();
+    							}
+    						}
+    					}
+    				},
+    				limits: { x: { minRange: 10 } }
+    			}
+    		},
+    		elements: { point: { hitRadius: 10 } },
+    		scales: {
+    			x: {
+    				grid: { drawOnChartArea: false },
+    				ticks: { maxTicksLimit: 20 }
+    			},
+    			y: {
+    				title: { display: true, text: yAxisLabel },
+    				grid: { drawOnChartArea: false },
+    				afterFit(scaleInst) {
+    					scaleInst.width = 58;
+    				}
+    			}
+    		},
+    		transitions: {
+    			zoom: {
+    				animation: { duration: 300, easing: 'easeOutQuint' }
+    			}
+    		},
+    		maintainAspectRatio: false,
+    		interaction: { mode: 'index', intersect: false }
+    	};
 
     	onMount(() => {
     		if (!chart) return;
@@ -20053,11 +20210,7 @@ var app = (function () {
     			const point = chart.getElementsAtEventForMode(e, "index", { intersect: false }, true);
 
     			if (point[0]) {
-    				//// style nitrogen chart
-    				//// // thresholds with recommendations
-    				//// // indicate test result events
     				set_store_value(hoverIdxPos, $hoverIdxPos = point[0].index, $hoverIdxPos);
-
     				set_store_value(hoverXPos, $hoverXPos = point[0].element.x, $hoverXPos);
     			} else {
     				set_store_value(hoverIdxPos, $hoverIdxPos = null, $hoverIdxPos);
@@ -20072,15 +20225,27 @@ var app = (function () {
 
     		$$invalidate(2, chart.canvas.onmousemove = handleHover, chart);
     		$$invalidate(2, chart.canvas.onmouseout = handleMouseOut, chart);
+    		$$invalidate(2, chart.options.plugins = { ...chart.options.plugins, ...plugins }, chart);
     		$$invalidate(2, chart.options.scales.x.min = data.datasets[0].data.length - 30, chart);
     		chart.update();
     	});
 
-    	function handleResetZoom(c) {
-    		$$invalidate(2, chart.options.scales.x.min = 0, chart);
-    		c.update();
-    		c.resetZoom();
+    	function handleResetZoom() {
+    		for (const k of Object.keys(Chart$1.instances)) {
+    			const c = Chart$1.instances[k];
+    			c.options.scales.x.min = 0;
+    			c.options.scales.x.max = data.datasets[0].data.length - 1;
+    			c.update();
+    		}
+
     		set_store_value(isZoomed, $isZoomed = false, $isZoomed);
+    	}
+
+    	function updatePlugins() {
+    		if (plugins && chart) {
+    			$$invalidate(2, chart.options.plugins = { ...chart.options.plugins, ...plugins }, chart);
+    			chart.update();
+    		}
     	}
 
     	$$self.$$.on_mount.push(function () {
@@ -20088,8 +20253,12 @@ var app = (function () {
     			console.warn("<LineChart> was created without expected prop 'data'");
     		}
 
-    		if (options === undefined && !('options' in $$props || $$self.$$.bound[$$self.$$.props['options']])) {
-    			console.warn("<LineChart> was created without expected prop 'options'");
+    		if (plugins === undefined && !('plugins' in $$props || $$self.$$.bound[$$self.$$.props['plugins']])) {
+    			console.warn("<LineChart> was created without expected prop 'plugins'");
+    		}
+
+    		if (yAxisLabel === undefined && !('yAxisLabel' in $$props || $$self.$$.bound[$$self.$$.props['yAxisLabel']])) {
+    			console.warn("<LineChart> was created without expected prop 'yAxisLabel'");
     		}
 
     		if (showResetZoomBtn === undefined && !('showResetZoomBtn' in $$props || $$self.$$.bound[$$self.$$.props['showResetZoomBtn']])) {
@@ -20097,7 +20266,7 @@ var app = (function () {
     		}
     	});
 
-    	const writable_props = ['data', 'options', 'showResetZoomBtn'];
+    	const writable_props = ['data', 'plugins', 'yAxisLabel', 'showResetZoomBtn'];
 
     	Object_1$6.keys($$props).forEach(key => {
     		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<LineChart> was created with unknown prop '${key}'`);
@@ -20126,11 +20295,12 @@ var app = (function () {
     		$$invalidate(2, chart);
     	}
 
-    	const func_2 = () => handleResetZoom(chart);
+    	const func_2 = () => handleResetZoom();
 
     	$$self.$$set = $$props => {
     		if ('data' in $$props) $$invalidate(0, data = $$props.data);
-    		if ('options' in $$props) $$invalidate(7, options = $$props.options);
+    		if ('plugins' in $$props) $$invalidate(7, plugins = $$props.plugins);
+    		if ('yAxisLabel' in $$props) $$invalidate(8, yAxisLabel = $$props.yAxisLabel);
     		if ('showResetZoomBtn' in $$props) $$invalidate(1, showResetZoomBtn = $$props.showResetZoomBtn);
     	};
 
@@ -20150,11 +20320,13 @@ var app = (function () {
     		PointElement,
     		Button,
     		data,
-    		options,
+    		plugins,
+    		yAxisLabel,
     		showResetZoomBtn,
     		chart,
+    		baseOptions,
     		handleResetZoom,
-    		allOptions,
+    		updatePlugins,
     		$isZoomed,
     		$hoverXPos,
     		$hoverIdxPos
@@ -20162,10 +20334,10 @@ var app = (function () {
 
     	$$self.$inject_state = $$props => {
     		if ('data' in $$props) $$invalidate(0, data = $$props.data);
-    		if ('options' in $$props) $$invalidate(7, options = $$props.options);
+    		if ('plugins' in $$props) $$invalidate(7, plugins = $$props.plugins);
+    		if ('yAxisLabel' in $$props) $$invalidate(8, yAxisLabel = $$props.yAxisLabel);
     		if ('showResetZoomBtn' in $$props) $$invalidate(1, showResetZoomBtn = $$props.showResetZoomBtn);
     		if ('chart' in $$props) $$invalidate(2, chart = $$props.chart);
-    		if ('allOptions' in $$props) $$invalidate(3, allOptions = $$props.allOptions);
     	};
 
     	if ($$props && "$$inject" in $$props) {
@@ -20173,54 +20345,8 @@ var app = (function () {
     	}
 
     	$$self.$$.update = () => {
-    		if ($$self.$$.dirty & /*options*/ 128) {
-    			$$invalidate(3, allOptions = {
-    				plugins: {
-    					zoom: {
-    						zoom: {
-    							drag: { enabled: true },
-    							mode: 'x',
-    							onZoomComplete({ chart }) {
-    								set_store_value(isZoomed, $isZoomed = true, $isZoomed);
-
-    								for (const k of Object.keys(Chart$1.instances)) {
-    									const c = Chart$1.instances[k];
-
-    									if (c.id !== chart.id && c.options.plugins.zoom.zoom) {
-    										c.options.scales.x.min = Math.trunc(chart.scales.x.min);
-    										c.options.scales.x.max = Math.trunc(chart.scales.x.max);
-    										c.update();
-    									}
-    								}
-    							}
-    						},
-    						limits: { x: { minRange: 10 } }
-    					},
-    					...options?.plugins
-    				},
-    				elements: { point: { hitRadius: 10 } },
-    				scales: {
-    					x: {
-    						grid: { drawOnChartArea: false },
-    						ticks: { maxTicksLimit: 20 },
-    						...options?.scales?.x
-    					},
-    					y: {
-    						grid: { drawOnChartArea: false },
-    						afterFit(scaleInst) {
-    							scaleInst.width = 58;
-    						},
-    						...options?.scales?.y
-    					}
-    				},
-    				transitions: {
-    					zoom: {
-    						animation: { duration: 750, easing: 'easeOutCubic' }
-    					}
-    				},
-    				maintainAspectRatio: false,
-    				interaction: { mode: 'index', intersect: false }
-    			});
+    		if ($$self.$$.dirty & /*plugins*/ 128) {
+    			(updatePlugins());
     		}
     	};
 
@@ -20228,11 +20354,12 @@ var app = (function () {
     		data,
     		showResetZoomBtn,
     		chart,
-    		allOptions,
     		$isZoomed,
     		$hoverXPos,
+    		baseOptions,
     		handleResetZoom,
-    		options,
+    		plugins,
+    		yAxisLabel,
     		func,
     		chart_1_chart_binding,
     		func_2
@@ -20242,7 +20369,13 @@ var app = (function () {
     class LineChart extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$s, create_fragment$C, safe_not_equal, { data: 0, options: 7, showResetZoomBtn: 1 });
+
+    		init(this, options, instance$s, create_fragment$C, safe_not_equal, {
+    			data: 0,
+    			plugins: 7,
+    			yAxisLabel: 8,
+    			showResetZoomBtn: 1
+    		});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
@@ -20260,11 +20393,19 @@ var app = (function () {
     		throw new Error("<LineChart>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
     	}
 
-    	get options() {
+    	get plugins() {
     		throw new Error("<LineChart>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
     	}
 
-    	set options(value) {
+    	set plugins(value) {
+    		throw new Error("<LineChart>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get yAxisLabel() {
+    		throw new Error("<LineChart>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set yAxisLabel(value) {
     		throw new Error("<LineChart>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
     	}
 
@@ -20278,8 +20419,6 @@ var app = (function () {
     }
 
     /* src/components/FixedTooltip.svelte generated by Svelte v3.59.2 */
-
-    const { console: console_1$2 } = globals;
     const file$w = "src/components/FixedTooltip.svelte";
 
     function get_each_context$5(ctx, list, i) {
@@ -20289,7 +20428,7 @@ var app = (function () {
     	return child_ctx;
     }
 
-    // (34:0) {#if $tooltipData}
+    // (23:0) {#if $tooltipData}
     function create_if_block$k(ctx) {
     	let div;
     	let h4;
@@ -20351,18 +20490,18 @@ var app = (function () {
     			t12 = space();
     			if (if_block2) if_block2.c();
     			attr_dev(h4, "class", "full-row svelte-107ah7t");
-    			add_location(h4, file$w, 35, 4, 968);
+    			add_location(h4, file$w, 24, 4, 591);
     			attr_dev(p0, "class", "row-header svelte-107ah7t");
-    			add_location(p0, file$w, 55, 4, 1582);
-    			add_location(sup0, file$w, 56, 54, 1666);
-    			add_location(sup1, file$w, 56, 69, 1681);
+    			add_location(p0, file$w, 44, 4, 1205);
+    			add_location(sup0, file$w, 45, 54, 1289);
+    			add_location(sup1, file$w, 45, 69, 1304);
     			set_style(p1, "line-height", "10px");
     			attr_dev(p1, "class", "svelte-107ah7t");
-    			add_location(p1, file$w, 56, 4, 1616);
+    			add_location(p1, file$w, 45, 4, 1239);
     			attr_dev(div, "class", "fixed-tooltip-container svelte-107ah7t");
     			set_style(div, "--numCols", /*$tooltipData*/ ctx[0].application ? 3 : 2);
     			set_style(div, "--numRows", 6 + (/*$tooltipData*/ ctx[0].application ? 1 : 0) + (/*$tooltipData*/ ctx[0].testResult ? 1 : 0));
-    			add_location(div, file$w, 34, 2, 782);
+    			add_location(div, file$w, 23, 2, 405);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -20477,14 +20616,14 @@ var app = (function () {
     		block,
     		id: create_if_block$k.name,
     		type: "if",
-    		source: "(34:0) {#if $tooltipData}",
+    		source: "(23:0) {#if $tooltipData}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (38:4) {#if $tooltipData.testResult}
+    // (27:4) {#if $tooltipData.testResult}
     function create_if_block_4$3(ctx) {
     	let p;
 
@@ -20493,7 +20632,7 @@ var app = (function () {
     			p = element("p");
     			p.textContent = "Test Results Applied";
     			attr_dev(p, "class", "full-row svelte-107ah7t");
-    			add_location(p, file$w, 38, 6, 1055);
+    			add_location(p, file$w, 27, 6, 678);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p, anchor);
@@ -20507,14 +20646,14 @@ var app = (function () {
     		block,
     		id: create_if_block_4$3.name,
     		type: "if",
-    		source: "(38:4) {#if $tooltipData.testResult}",
+    		source: "(27:4) {#if $tooltipData.testResult}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (42:4) {#if $tooltipData.application}
+    // (31:4) {#if $tooltipData.application}
     function create_if_block_3$6(ctx) {
     	let p0;
     	let t0;
@@ -20532,11 +20671,11 @@ var app = (function () {
     			p2 = element("p");
     			p2.textContent = "Added Today";
     			attr_dev(p0, "class", "header svelte-107ah7t");
-    			add_location(p0, file$w, 42, 6, 1152);
+    			add_location(p0, file$w, 31, 6, 775);
     			attr_dev(p1, "class", "header svelte-107ah7t");
-    			add_location(p1, file$w, 43, 6, 1181);
+    			add_location(p1, file$w, 32, 6, 804);
     			attr_dev(p2, "class", "header svelte-107ah7t");
-    			add_location(p2, file$w, 44, 6, 1217);
+    			add_location(p2, file$w, 33, 6, 840);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p0, anchor);
@@ -20558,14 +20697,14 @@ var app = (function () {
     		block,
     		id: create_if_block_3$6.name,
     		type: "if",
-    		source: "(42:4) {#if $tooltipData.application}",
+    		source: "(31:4) {#if $tooltipData.application}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (51:6) {#if $tooltipData.application}
+    // (40:6) {#if $tooltipData.application}
     function create_if_block_2$6(ctx) {
     	let p;
     	let t0_value = Math.round(/*$tooltipData*/ ctx[0].application.inorganicN) + "";
@@ -20578,7 +20717,7 @@ var app = (function () {
     			t0 = text(t0_value);
     			t1 = text("lbs/acre");
     			attr_dev(p, "class", "svelte-107ah7t");
-    			add_location(p, file$w, 51, 8, 1488);
+    			add_location(p, file$w, 40, 8, 1111);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p, anchor);
@@ -20597,14 +20736,14 @@ var app = (function () {
     		block,
     		id: create_if_block_2$6.name,
     		type: "if",
-    		source: "(51:6) {#if $tooltipData.application}",
+    		source: "(40:6) {#if $tooltipData.application}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (48:4) {#each nRows as { title, key }}
+    // (37:4) {#each nRows as { title, key }}
     function create_each_block$5(ctx) {
     	let p0;
     	let t0_value = /*title*/ ctx[2] + "";
@@ -20635,9 +20774,9 @@ var app = (function () {
     			if (if_block) if_block.c();
     			if_block_anchor = empty();
     			attr_dev(p0, "class", "row-header svelte-107ah7t");
-    			add_location(p0, file$w, 48, 6, 1304);
+    			add_location(p0, file$w, 37, 6, 927);
     			attr_dev(p1, "class", "svelte-107ah7t");
-    			add_location(p1, file$w, 49, 6, 1344);
+    			add_location(p1, file$w, 38, 6, 967);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p0, anchor);
@@ -20683,14 +20822,14 @@ var app = (function () {
     		block,
     		id: create_each_block$5.name,
     		type: "each",
-    		source: "(48:4) {#each nRows as { title, key }}",
+    		source: "(37:4) {#each nRows as { title, key }}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (58:4) {#if $tooltipData.application}
+    // (47:4) {#if $tooltipData.application}
     function create_if_block_1$a(ctx) {
     	let p;
     	let t0_value = /*$tooltipData*/ ctx[0].application.waterAmount + "";
@@ -20703,7 +20842,7 @@ var app = (function () {
     			t0 = text(t0_value);
     			t1 = text("in");
     			attr_dev(p, "class", "svelte-107ah7t");
-    			add_location(p, file$w, 58, 6, 1739);
+    			add_location(p, file$w, 47, 6, 1362);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p, anchor);
@@ -20722,7 +20861,7 @@ var app = (function () {
     		block,
     		id: create_if_block_1$a.name,
     		type: "if",
-    		source: "(58:4) {#if $tooltipData.application}",
+    		source: "(47:4) {#if $tooltipData.application}",
     		ctx
     	});
 
@@ -20811,17 +20950,10 @@ var app = (function () {
     	const writable_props = [];
 
     	Object.keys($$props).forEach(key => {
-    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1$2.warn(`<FixedTooltip> was created with unknown prop '${key}'`);
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<FixedTooltip> was created with unknown prop '${key}'`);
     	});
 
     	$$self.$capture_state = () => ({ tooltipData, nRows, $tooltipData });
-
-    	$$self.$$.update = () => {
-    		if ($$self.$$.dirty & /*$tooltipData*/ 1) {
-    			console.log($tooltipData ? $tooltipData.application : null);
-    		}
-    	};
-
     	return [$tooltipData, nRows];
     }
 
@@ -20842,7 +20974,7 @@ var app = (function () {
     /* src/components/LineCharts.svelte generated by Svelte v3.59.2 */
     const file$v = "src/components/LineCharts.svelte";
 
-    // (52:2) {#if $nutrientData}
+    // (43:2) {#if $nutrientData}
     function create_if_block$j(ctx) {
     	let linechart0;
     	let t;
@@ -20850,7 +20982,7 @@ var app = (function () {
     	let current;
 
     	const linechart0_spread_levels = [
-    		/*constructLineChartProps*/ ctx[1]('tin', 'Inorganic Nitrogen', 'Inorganic Nitrogen (ppm)', true)
+    		/*constructLineChartProps*/ ctx[1](/*$nutrientData*/ ctx[0], 'tin', 'Inorganic Nitrogen', 'Inorganic Nitrogen (ppm)', true)
     	];
 
     	let linechart0_props = {};
@@ -20862,7 +20994,7 @@ var app = (function () {
     	linechart0 = new LineChart({ props: linechart0_props, $$inline: true });
 
     	const linechart1_spread_levels = [
-    		/*constructLineChartProps*/ ctx[1]('vwc', 'VWC', `Volumetric Water Content (in\u00B3/ in\u00B3)`, false)
+    		/*constructLineChartProps*/ ctx[1](/*$nutrientData*/ ctx[0], 'vwc', 'VWC', `Volumetric Water Content (in\u00B3/ in\u00B3)`, false)
     	];
 
     	let linechart1_props = {};
@@ -20886,17 +21018,17 @@ var app = (function () {
     			current = true;
     		},
     		p: function update(ctx, dirty) {
-    			const linechart0_changes = (dirty & /*constructLineChartProps*/ 2)
+    			const linechart0_changes = (dirty & /*constructLineChartProps, $nutrientData*/ 3)
     			? get_spread_update(linechart0_spread_levels, [
-    					get_spread_object(/*constructLineChartProps*/ ctx[1]('tin', 'Inorganic Nitrogen', 'Inorganic Nitrogen (ppm)', true))
+    					get_spread_object(/*constructLineChartProps*/ ctx[1](/*$nutrientData*/ ctx[0], 'tin', 'Inorganic Nitrogen', 'Inorganic Nitrogen (ppm)', true))
     				])
     			: {};
 
     			linechart0.$set(linechart0_changes);
 
-    			const linechart1_changes = (dirty & /*constructLineChartProps*/ 2)
+    			const linechart1_changes = (dirty & /*constructLineChartProps, $nutrientData*/ 3)
     			? get_spread_update(linechart1_spread_levels, [
-    					get_spread_object(/*constructLineChartProps*/ ctx[1]('vwc', 'VWC', `Volumetric Water Content (in\u00B3/ in\u00B3)`, false))
+    					get_spread_object(/*constructLineChartProps*/ ctx[1](/*$nutrientData*/ ctx[0], 'vwc', 'VWC', `Volumetric Water Content (in\u00B3/ in\u00B3)`, false))
     				])
     			: {};
 
@@ -20924,7 +21056,7 @@ var app = (function () {
     		block,
     		id: create_if_block$j.name,
     		type: "if",
-    		source: "(52:2) {#if $nutrientData}",
+    		source: "(43:2) {#if $nutrientData}",
     		ctx
     	});
 
@@ -20946,7 +21078,7 @@ var app = (function () {
     			t = space();
     			create_component(fixedtooltip.$$.fragment);
     			attr_dev(div, "class", "line-charts-container svelte-ysww81");
-    			add_location(div, file$v, 50, 0, 2105);
+    			add_location(div, file$v, 41, 0, 1889);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -21012,39 +21144,39 @@ var app = (function () {
     }
 
     function instance$q($$self, $$props, $$invalidate) {
-    	let $nutrientData;
     	let $waterData;
-    	validate_store(nutrientData, 'nutrientData');
-    	component_subscribe($$self, nutrientData, $$value => $$invalidate(0, $nutrientData = $$value));
+    	let $nutrientData;
     	validate_store(waterData, 'waterData');
     	component_subscribe($$self, waterData, $$value => $$invalidate(2, $waterData = $$value));
+    	validate_store(nutrientData, 'nutrientData');
+    	component_subscribe($$self, nutrientData, $$value => $$invalidate(0, $nutrientData = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('LineCharts', slots, []);
 
-    	function constructLineChartProps(dataKey, datasetLabel, yAxisLabel, showResetZoomBtn) {
+    	function constructLineChartProps(nutrientData, dataKey, datasetLabel, yAxisLabel, showResetZoomBtn) {
     		const { fcstLength } = $waterData;
-    		const data = $nutrientData[dataKey];
+    		const data = nutrientData[dataKey];
     		const dataLength = data.length;
     		const observed = data.slice(0, dataLength - fcstLength).concat(new Array(fcstLength).fill(null));
     		const forecasted = new Array(dataLength - fcstLength).fill(null).concat(data.slice(dataLength - fcstLength));
 
-    		const plugins = $nutrientData[`${dataKey}Annotations`]
+    		const plugins = nutrientData[`${dataKey}Annotations`]
     		? {
-    				annotation: $nutrientData[`${dataKey}Annotations`]
+    				annotation: nutrientData[`${dataKey}Annotations`]
     			}
     		: {};
 
-    		const pointBackgroundColor = $nutrientData[`${dataKey}PntColors`] || 'black';
+    		const pointBackgroundColor = nutrientData[`${dataKey}PntColors`] || 'black';
 
-    		const pointBorderColor = $nutrientData[`${dataKey}PntBorders`]
-    		? $nutrientData[`${dataKey}PntBorders`].borderColors
+    		const pointBorderColor = nutrientData[`${dataKey}PntBorders`]
+    		? nutrientData[`${dataKey}PntBorders`].borderColors
     		: 'black';
 
-    		const pointBorderWidth = $nutrientData[`${dataKey}PntBorders`]
-    		? $nutrientData[`${dataKey}PntBorders`].borderWidths
+    		const pointBorderWidth = nutrientData[`${dataKey}PntBorders`]
+    		? nutrientData[`${dataKey}PntBorders`].borderWidths
     		: 0;
 
-    		const labels = $nutrientData.dates.map(d => d.slice(5).replace('-', '/'));
+    		const labels = nutrientData.dates.map(d => d.slice(5).replace('-', '/'));
 
     		return {
     			data: {
@@ -21069,14 +21201,8 @@ var app = (function () {
     					}
     				]
     			},
-    			options: {
-    				plugins,
-    				scales: {
-    					y: {
-    						title: { display: true, text: yAxisLabel }
-    					}
-    				}
-    			},
+    			plugins,
+    			yAxisLabel,
     			showResetZoomBtn
     		};
     	}
@@ -21093,8 +21219,8 @@ var app = (function () {
     		LineChart,
     		FixedTooltip,
     		constructLineChartProps,
-    		$nutrientData,
-    		$waterData
+    		$waterData,
+    		$nutrientData
     	});
 
     	return [$nutrientData, constructLineChartProps];
@@ -63120,25 +63246,25 @@ var app = (function () {
 
     function get_each_context(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[19] = list[i];
-    	child_ctx[20] = list;
-    	child_ctx[21] = i;
+    	child_ctx[20] = list[i];
+    	child_ctx[21] = list;
+    	child_ctx[22] = i;
     	return child_ctx;
     }
 
     function get_each_context_1(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[22] = list[i];
-    	child_ctx[23] = list;
-    	child_ctx[24] = i;
+    	child_ctx[23] = list[i];
+    	child_ctx[24] = list;
+    	child_ctx[25] = i;
     	return child_ctx;
     }
 
     function get_each_context_2(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[25] = list[i];
-    	child_ctx[26] = list;
-    	child_ctx[27] = i;
+    	child_ctx[26] = list[i];
+    	child_ctx[27] = list;
+    	child_ctx[28] = i;
     	return child_ctx;
     }
 
@@ -63204,21 +63330,21 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const optionscontainer0_changes = {};
 
-    			if (dirty & /*$$scope, localDevOptions, $devOptions, localUserOptions, $userOptions, $soilCharacteristics*/ 268435487) {
+    			if (dirty & /*$$scope, localDevOptions, $devOptions, localUserOptions, $userOptions, $soilCharacteristics*/ 536870943) {
     				optionscontainer0_changes.$$scope = { dirty, ctx };
     			}
 
     			optionscontainer0.$set(optionscontainer0_changes);
     			const optionscontainer1_changes = {};
 
-    			if (dirty & /*$$scope*/ 268435456) {
+    			if (dirty & /*$$scope*/ 536870912) {
     				optionscontainer1_changes.$$scope = { dirty, ctx };
     			}
 
     			optionscontainer1.$set(optionscontainer1_changes);
     			const optionscontainer2_changes = {};
 
-    			if (dirty & /*$$scope*/ 268435456) {
+    			if (dirty & /*$$scope*/ 536870912) {
     				optionscontainer2_changes.$$scope = { dirty, ctx };
     			}
 
@@ -63256,7 +63382,7 @@ var app = (function () {
     	return block;
     }
 
-    // (81:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
+    // (92:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
     function create_default_slot_5(ctx) {
     	let t;
 
@@ -63276,7 +63402,7 @@ var app = (function () {
     		block,
     		id: create_default_slot_5.name,
     		type: "slot",
-    		source: "(81:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
+    		source: "(92:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
     		ctx
     	});
 
@@ -63295,6 +63421,9 @@ var app = (function () {
     	let shapedtextfield1;
     	let updating_value_2;
     	let t2;
+    	let shapedtextfield2;
+    	let updating_value_3;
+    	let t3;
     	let div1;
     	let button;
     	let current;
@@ -63372,6 +63501,32 @@ var app = (function () {
 
     	binding_callbacks.push(() => bind(shapedtextfield1, 'value', shapedtextfield1_value_binding));
 
+    	function shapedtextfield2_value_binding(value) {
+    		/*shapedtextfield2_value_binding*/ ctx[11](value);
+    	}
+
+    	let shapedtextfield2_props = {
+    		highlight: /*localUserOptions*/ ctx[3].terminationDate !== /*$userOptions*/ ctx[1].terminationDate,
+    		label: "Termination Date",
+    		helperText: "Date the tomatoes were terminated",
+    		helperProps: { persistent: true },
+    		type: "date",
+    		disabled: !/*localUserOptions*/ ctx[3].plantingDate,
+    		input$min: /*localUserOptions*/ ctx[3].plantingDate,
+    		input$max: endDate
+    	};
+
+    	if (/*localUserOptions*/ ctx[3].terminationDate !== void 0) {
+    		shapedtextfield2_props.value = /*localUserOptions*/ ctx[3].terminationDate;
+    	}
+
+    	shapedtextfield2 = new ShapedTextfield({
+    			props: shapedtextfield2_props,
+    			$$inline: true
+    		});
+
+    	binding_callbacks.push(() => bind(shapedtextfield2, 'value', shapedtextfield2_value_binding));
+
     	button = new Button({
     			props: {
     				btnType: "orange",
@@ -63394,12 +63549,14 @@ var app = (function () {
     			t1 = space();
     			create_component(shapedtextfield1.$$.fragment);
     			t2 = space();
+    			create_component(shapedtextfield2.$$.fragment);
+    			t3 = space();
     			div1 = element("div");
     			create_component(button.$$.fragment);
     			attr_dev(div0, "class", "other-vars svelte-z75n2m");
     			add_location(div0, file$1, 48, 8, 1480);
     			set_style(div1, "margin-top", "24px");
-    			add_location(div1, file$1, 79, 8, 3009);
+    			add_location(div1, file$1, 90, 8, 3504);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div0, anchor);
@@ -63408,7 +63565,9 @@ var app = (function () {
     			mount_component(shapedtextfield0, div0, null);
     			append_dev(div0, t1);
     			mount_component(shapedtextfield1, div0, null);
-    			insert_dev(target, t2, anchor);
+    			append_dev(div0, t2);
+    			mount_component(shapedtextfield2, div0, null);
+    			insert_dev(target, t3, anchor);
     			insert_dev(target, div1, anchor);
     			mount_component(button, div1, null);
     			current = true;
@@ -63446,10 +63605,22 @@ var app = (function () {
     			}
 
     			shapedtextfield1.$set(shapedtextfield1_changes);
+    			const shapedtextfield2_changes = {};
+    			if (dirty & /*localUserOptions, $userOptions*/ 10) shapedtextfield2_changes.highlight = /*localUserOptions*/ ctx[3].terminationDate !== /*$userOptions*/ ctx[1].terminationDate;
+    			if (dirty & /*localUserOptions*/ 8) shapedtextfield2_changes.disabled = !/*localUserOptions*/ ctx[3].plantingDate;
+    			if (dirty & /*localUserOptions*/ 8) shapedtextfield2_changes.input$min = /*localUserOptions*/ ctx[3].plantingDate;
+
+    			if (!updating_value_3 && dirty & /*localUserOptions*/ 8) {
+    				updating_value_3 = true;
+    				shapedtextfield2_changes.value = /*localUserOptions*/ ctx[3].terminationDate;
+    				add_flush_callback(() => updating_value_3 = false);
+    			}
+
+    			shapedtextfield2.$set(shapedtextfield2_changes);
     			const button_changes = {};
     			if (dirty & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15) button_changes.disabled = JSON.stringify(/*localDevOptions*/ ctx[2]) === JSON.stringify(/*$devOptions*/ ctx[0]) && JSON.stringify(/*localUserOptions*/ ctx[3]) === JSON.stringify(/*$userOptions*/ ctx[1]);
 
-    			if (dirty & /*$$scope*/ 268435456) {
+    			if (dirty & /*$$scope*/ 536870912) {
     				button_changes.$$scope = { dirty, ctx };
     			}
 
@@ -63460,6 +63631,7 @@ var app = (function () {
     			transition_in(shapedselect.$$.fragment, local);
     			transition_in(shapedtextfield0.$$.fragment, local);
     			transition_in(shapedtextfield1.$$.fragment, local);
+    			transition_in(shapedtextfield2.$$.fragment, local);
     			transition_in(button.$$.fragment, local);
     			current = true;
     		},
@@ -63467,6 +63639,7 @@ var app = (function () {
     			transition_out(shapedselect.$$.fragment, local);
     			transition_out(shapedtextfield0.$$.fragment, local);
     			transition_out(shapedtextfield1.$$.fragment, local);
+    			transition_out(shapedtextfield2.$$.fragment, local);
     			transition_out(button.$$.fragment, local);
     			current = false;
     		},
@@ -63475,7 +63648,8 @@ var app = (function () {
     			destroy_component(shapedselect);
     			destroy_component(shapedtextfield0);
     			destroy_component(shapedtextfield1);
-    			if (detaching) detach_dev(t2);
+    			destroy_component(shapedtextfield2);
+    			if (detaching) detach_dev(t3);
     			if (detaching) detach_dev(div1);
     			destroy_component(button);
     		}
@@ -63492,7 +63666,7 @@ var app = (function () {
     	return block;
     }
 
-    // (91:6) <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'>
+    // (102:6) <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'>
     function create_default_slot_3(ctx) {
     	let applications;
     	let current;
@@ -63524,14 +63698,14 @@ var app = (function () {
     		block,
     		id: create_default_slot_3.name,
     		type: "slot",
-    		source: "(91:6) <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'>",
+    		source: "(102:6) <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'>",
     		ctx
     	});
 
     	return block;
     }
 
-    // (92:6) <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'>
+    // (103:6) <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'>
     function create_default_slot_2(ctx) {
     	let testresults;
     	let current;
@@ -63563,14 +63737,14 @@ var app = (function () {
     		block,
     		id: create_default_slot_2.name,
     		type: "slot",
-    		source: "(92:6) <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'>",
+    		source: "(103:6) <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'>",
     		ctx
     	});
 
     	return block;
     }
 
-    // (95:2) {#if localDevOptions && $userOptions}
+    // (106:2) {#if localDevOptions && $userOptions}
     function create_if_block$1(ctx) {
     	let div;
     	let optionscontainer;
@@ -63591,7 +63765,7 @@ var app = (function () {
     			create_component(optionscontainer.$$.fragment);
     			set_style(div, "width", "925px");
     			set_style(div, "margin", "0 auto");
-    			add_location(div, file$1, 95, 4, 3787);
+    			add_location(div, file$1, 106, 4, 4282);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -63601,7 +63775,7 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const optionscontainer_changes = {};
 
-    			if (dirty & /*$$scope, localDevOptions, $devOptions, localUserOptions, $userOptions*/ 268435471) {
+    			if (dirty & /*$$scope, localDevOptions, $devOptions, localUserOptions, $userOptions*/ 536870927) {
     				optionscontainer_changes.$$scope = { dirty, ctx };
     			}
 
@@ -63626,14 +63800,14 @@ var app = (function () {
     		block,
     		id: create_if_block$1.name,
     		type: "if",
-    		source: "(95:2) {#if localDevOptions && $userOptions}",
+    		source: "(106:2) {#if localDevOptions && $userOptions}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (107:16) {:else}
+    // (118:16) {:else}
     function create_else_block(ctx) {
     	let div;
     	let shapedtextfield;
@@ -63643,19 +63817,19 @@ var app = (function () {
     	let current;
 
     	function shapedtextfield_value_binding(value) {
-    		/*shapedtextfield_value_binding*/ ctx[12](value, /*col*/ ctx[25], /*row*/ ctx[22]);
+    		/*shapedtextfield_value_binding*/ ctx[13](value, /*col*/ ctx[26], /*row*/ ctx[23]);
     	}
 
     	let shapedtextfield_props = {
-    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[25]][/*row*/ ctx[22]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[25]][/*row*/ ctx[22]],
+    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]],
     		type: "number",
     		input$step: "0.01",
     		input$min: "0",
     		width: "115"
     	};
 
-    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[25]][/*row*/ ctx[22]] !== void 0) {
-    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[25]][/*row*/ ctx[22]];
+    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]] !== void 0) {
+    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]];
     	}
 
     	shapedtextfield = new ShapedTextfield({
@@ -63671,11 +63845,11 @@ var app = (function () {
     			create_component(shapedtextfield.$$.fragment);
     			t = space();
 
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[25] === /*$userOptions*/ ctx[1].waterCapacity
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[26] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'highlighted'
     			: '') + " svelte-z75n2m"));
 
-    			add_location(div, file$1, 107, 18, 4550);
+    			add_location(div, file$1, 118, 18, 5045);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -63686,17 +63860,17 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
     			const shapedtextfield_changes = {};
-    			if (dirty & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[25]][/*row*/ ctx[22]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[25]][/*row*/ ctx[22]];
+    			if (dirty & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]];
 
     			if (!updating_value && dirty & /*localDevOptions*/ 4) {
     				updating_value = true;
-    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[25]][/*row*/ ctx[22]];
+    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]];
     				add_flush_callback(() => updating_value = false);
     			}
 
     			shapedtextfield.$set(shapedtextfield_changes);
 
-    			if (!current || dirty & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[25] === /*$userOptions*/ ctx[1].waterCapacity
+    			if (!current || dirty & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[26] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'highlighted'
     			: '') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
@@ -63721,14 +63895,14 @@ var app = (function () {
     		block,
     		id: create_else_block.name,
     		type: "else",
-    		source: "(107:16) {:else}",
+    		source: "(118:16) {:else}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (105:37) 
+    // (116:37) 
     function create_if_block_2(ctx) {
     	let div;
     	let t_value = /*waterCapacityOptions*/ ctx[6].find(func_1).name + "";
@@ -63736,7 +63910,7 @@ var app = (function () {
     	let div_class_value;
 
     	function func_1(...args) {
-    		return /*func_1*/ ctx[11](/*col*/ ctx[25], ...args);
+    		return /*func_1*/ ctx[12](/*col*/ ctx[26], ...args);
     	}
 
     	const block = {
@@ -63744,11 +63918,11 @@ var app = (function () {
     			div = element("div");
     			t = text(t_value);
 
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[25] === /*$userOptions*/ ctx[1].waterCapacity
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[26] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'header highlighted'
     			: 'header') + " svelte-z75n2m"));
 
-    			add_location(div, file$1, 105, 18, 4361);
+    			add_location(div, file$1, 116, 18, 4856);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -63757,7 +63931,7 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
 
-    			if (dirty & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[25] === /*$userOptions*/ ctx[1].waterCapacity
+    			if (dirty & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[26] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'header highlighted'
     			: 'header') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
@@ -63774,14 +63948,14 @@ var app = (function () {
     		block,
     		id: create_if_block_2.name,
     		type: "if",
-    		source: "(105:37) ",
+    		source: "(116:37) ",
     		ctx
     	});
 
     	return block;
     }
 
-    // (103:16) {#if col === 'constName'}
+    // (114:16) {#if col === 'constName'}
     function create_if_block_1$1(ctx) {
     	let div;
     	let t;
@@ -63789,10 +63963,10 @@ var app = (function () {
     	const block = {
     		c: function create() {
     			div = element("div");
-    			t = text(/*row*/ ctx[22]);
+    			t = text(/*row*/ ctx[23]);
     			attr_dev(div, "class", "header svelte-z75n2m");
     			set_style(div, "height", "24px");
-    			add_location(div, file$1, 103, 18, 4251);
+    			add_location(div, file$1, 114, 18, 4746);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -63810,14 +63984,14 @@ var app = (function () {
     		block,
     		id: create_if_block_1$1.name,
     		type: "if",
-    		source: "(103:16) {#if col === 'constName'}",
+    		source: "(114:16) {#if col === 'constName'}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (102:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}
+    // (113:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}
     function create_each_block_2(key_1, ctx) {
     	let first;
     	let current_block_type_index;
@@ -63828,8 +64002,8 @@ var app = (function () {
     	const if_blocks = [];
 
     	function select_block_type(ctx, dirty) {
-    		if (/*col*/ ctx[25] === 'constName') return 0;
-    		if (/*row*/ ctx[22] === '') return 1;
+    		if (/*col*/ ctx[26] === 'constName') return 0;
+    		if (/*row*/ ctx[23] === '') return 1;
     		return 2;
     	}
 
@@ -63875,14 +64049,14 @@ var app = (function () {
     		block,
     		id: create_each_block_2.name,
     		type: "each",
-    		source: "(102:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}",
+    		source: "(113:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (101:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}
+    // (112:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}
     function create_each_block_1(ctx) {
     	let each_blocks = [];
     	let each_1_lookup = new Map();
@@ -63890,7 +64064,7 @@ var app = (function () {
     	let current;
     	let each_value_2 = ['constName', 'low', 'medium', 'high'];
     	validate_each_argument(each_value_2);
-    	const get_key = ctx => `${/*col*/ ctx[25]}-${/*row*/ ctx[22]}`;
+    	const get_key = ctx => `${/*col*/ ctx[26]}-${/*row*/ ctx[23]}`;
     	validate_each_keys(ctx, each_value_2, get_each_context_2, get_key);
 
     	for (let i = 0; i < 4; i += 1) {
@@ -63956,14 +64130,14 @@ var app = (function () {
     		block,
     		id: create_each_block_1.name,
     		type: "each",
-    		source: "(101:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}",
+    		source: "(112:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (126:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}
+    // (137:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}
     function create_each_block(key_1, ctx) {
     	let div;
     	let shapedtextfield;
@@ -63973,21 +64147,21 @@ var app = (function () {
     	let current;
 
     	function shapedtextfield_value_binding_1(value) {
-    		/*shapedtextfield_value_binding_1*/ ctx[13](value, /*kcConst*/ ctx[19]);
+    		/*shapedtextfield_value_binding_1*/ ctx[14](value, /*kcConst*/ ctx[20]);
     	}
 
     	let shapedtextfield_props = {
-    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].value,
-    		label: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].name,
-    		helperText: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].description,
+    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value,
+    		label: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].name,
+    		helperText: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].description,
     		helperProps: { persistent: true },
     		type: "number",
-    		input$step: /*kcConst*/ ctx[19].slice(0, 1) === 'K' ? '0.01' : '1',
+    		input$step: /*kcConst*/ ctx[20].slice(0, 1) === 'K' ? '0.01' : '1',
     		input$min: "0"
     	};
 
-    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].value !== void 0) {
-    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].value;
+    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value !== void 0) {
+    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value;
     	}
 
     	shapedtextfield = new ShapedTextfield({
@@ -64004,8 +64178,8 @@ var app = (function () {
     			div = element("div");
     			create_component(shapedtextfield.$$.fragment);
     			t = space();
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[19] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"));
-    			add_location(div, file$1, 126, 14, 5353);
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[20] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"));
+    			add_location(div, file$1, 137, 14, 5848);
     			this.first = div;
     		},
     		m: function mount(target, anchor) {
@@ -64017,20 +64191,20 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
     			const shapedtextfield_changes = {};
-    			if (dirty & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].value;
-    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.label = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].name;
-    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.helperText = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].description;
-    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.input$step = /*kcConst*/ ctx[19].slice(0, 1) === 'K' ? '0.01' : '1';
+    			if (dirty & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value;
+    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.label = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].name;
+    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.helperText = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].description;
+    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.input$step = /*kcConst*/ ctx[20].slice(0, 1) === 'K' ? '0.01' : '1';
 
     			if (!updating_value && dirty & /*localDevOptions, Object*/ 4) {
     				updating_value = true;
-    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[19]].value;
+    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value;
     				add_flush_callback(() => updating_value = false);
     			}
 
     			shapedtextfield.$set(shapedtextfield_changes);
 
-    			if (!current || dirty & /*localDevOptions*/ 4 && div_class_value !== (div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[19] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"))) {
+    			if (!current || dirty & /*localDevOptions*/ 4 && div_class_value !== (div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[20] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
     			}
     		},
@@ -64053,14 +64227,14 @@ var app = (function () {
     		block,
     		id: create_each_block.name,
     		type: "each",
-    		source: "(126:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}",
+    		source: "(137:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (171:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
+    // (182:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
     function create_default_slot_1(ctx) {
     	let t;
 
@@ -64080,14 +64254,14 @@ var app = (function () {
     		block,
     		id: create_default_slot_1.name,
     		type: "slot",
-    		source: "(171:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
+    		source: "(182:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
     		ctx
     	});
 
     	return block;
     }
 
-    // (97:6) <OptionsContainer sectionName='Development Only'>
+    // (108:6) <OptionsContainer sectionName='Development Only'>
     function create_default_slot(ctx) {
     	let div1;
     	let h40;
@@ -64137,7 +64311,7 @@ var app = (function () {
 
     	let each_value = Object.keys(/*localDevOptions*/ ctx[2].soilmoistureoptions.kc);
     	validate_each_argument(each_value);
-    	const get_key = ctx => /*kcConst*/ ctx[19];
+    	const get_key = ctx => /*kcConst*/ ctx[20];
     	validate_each_keys(ctx, each_value, get_each_context, get_key);
 
     	for (let i = 0; i < each_value.length; i += 1) {
@@ -64147,7 +64321,7 @@ var app = (function () {
     	}
 
     	function shapedtextfield0_value_binding_1(value) {
-    		/*shapedtextfield0_value_binding_1*/ ctx[14](value);
+    		/*shapedtextfield0_value_binding_1*/ ctx[15](value);
     	}
 
     	let shapedtextfield0_props = {
@@ -64173,7 +64347,7 @@ var app = (function () {
     	binding_callbacks.push(() => bind(shapedtextfield0, 'value', shapedtextfield0_value_binding_1));
 
     	function shapedtextfield1_value_binding_1(value) {
-    		/*shapedtextfield1_value_binding_1*/ ctx[15](value);
+    		/*shapedtextfield1_value_binding_1*/ ctx[16](value);
     	}
 
     	let shapedtextfield1_props = {
@@ -64246,20 +64420,20 @@ var app = (function () {
     			t9 = space();
     			div6 = element("div");
     			create_component(button.$$.fragment);
-    			add_location(h40, file$1, 98, 10, 3911);
+    			add_location(h40, file$1, 109, 10, 4406);
     			attr_dev(div0, "class", "smo-grid svelte-z75n2m");
-    			add_location(div0, file$1, 99, 10, 3965);
-    			add_location(div1, file$1, 97, 8, 3895);
-    			add_location(h41, file$1, 123, 10, 5176);
+    			add_location(div0, file$1, 110, 10, 4460);
+    			add_location(div1, file$1, 108, 8, 4390);
+    			add_location(h41, file$1, 134, 10, 5671);
     			attr_dev(div2, "class", "kc-grid svelte-z75n2m");
-    			add_location(div2, file$1, 124, 10, 5224);
-    			add_location(div3, file$1, 122, 8, 5160);
-    			add_location(h42, file$1, 142, 10, 6134);
+    			add_location(div2, file$1, 135, 10, 5719);
+    			add_location(div3, file$1, 133, 8, 5655);
+    			add_location(h42, file$1, 153, 10, 6629);
     			attr_dev(div4, "class", "other-vars svelte-z75n2m");
-    			add_location(div4, file$1, 143, 10, 6169);
-    			add_location(div5, file$1, 141, 8, 6118);
+    			add_location(div4, file$1, 154, 10, 6664);
+    			add_location(div5, file$1, 152, 8, 6613);
     			set_style(div6, "margin-top", "24px");
-    			add_location(div6, file$1, 169, 8, 7246);
+    			add_location(div6, file$1, 180, 8, 7741);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div1, anchor);
@@ -64367,7 +64541,7 @@ var app = (function () {
     			const button_changes = {};
     			if (dirty & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15) button_changes.disabled = JSON.stringify(/*localDevOptions*/ ctx[2]) === JSON.stringify(/*$devOptions*/ ctx[0]) && JSON.stringify(/*localUserOptions*/ ctx[3]) === JSON.stringify(/*$userOptions*/ ctx[1]);
 
-    			if (dirty & /*$$scope*/ 268435456) {
+    			if (dirty & /*$$scope*/ 536870912) {
     				button_changes.$$scope = { dirty, ctx };
     			}
 
@@ -64429,7 +64603,7 @@ var app = (function () {
     		block,
     		id: create_default_slot.name,
     		type: "slot",
-    		source: "(97:6) <OptionsContainer sectionName='Development Only'>",
+    		source: "(108:6) <OptionsContainer sectionName='Development Only'>",
     		ctx
     	});
 
@@ -64548,7 +64722,7 @@ var app = (function () {
     	validate_store(userOptions, 'userOptions');
     	component_subscribe($$self, userOptions, $$value => $$invalidate(1, $userOptions = $$value));
     	validate_store(activeLocationId, 'activeLocationId');
-    	component_subscribe($$self, activeLocationId, $$value => $$invalidate(16, $activeLocationId = $$value));
+    	component_subscribe($$self, activeLocationId, $$value => $$invalidate(17, $activeLocationId = $$value));
     	validate_store(soilCharacteristics, 'soilCharacteristics');
     	component_subscribe($$self, soilCharacteristics, $$value => $$invalidate(4, $soilCharacteristics = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
@@ -64613,6 +64787,13 @@ var app = (function () {
     	function shapedtextfield1_value_binding(value) {
     		if ($$self.$$.not_equal(localUserOptions.plantingDate, value)) {
     			localUserOptions.plantingDate = value;
+    			$$invalidate(3, localUserOptions);
+    		}
+    	}
+
+    	function shapedtextfield2_value_binding(value) {
+    		if ($$self.$$.not_equal(localUserOptions.terminationDate, value)) {
+    			localUserOptions.terminationDate = value;
     			$$invalidate(3, localUserOptions);
     		}
     	}
@@ -64703,6 +64884,7 @@ var app = (function () {
     		shapedselect_value_binding,
     		shapedtextfield0_value_binding,
     		shapedtextfield1_value_binding,
+    		shapedtextfield2_value_binding,
     		func_1,
     		shapedtextfield_value_binding,
     		shapedtextfield_value_binding_1,
@@ -64731,7 +64913,7 @@ var app = (function () {
 
     const file = "src/App.svelte";
 
-    // (25:33) 
+    // (23:33) 
     function create_if_block_1(ctx) {
     	let div;
 
@@ -64740,7 +64922,7 @@ var app = (function () {
     			div = element("div");
     			div.textContent = "Soil data could not be loaded for this location. Please try a different location.";
     			attr_dev(div, "class", "no-soil-data svelte-1na5kk7");
-    			add_location(div, file, 25, 2, 1042);
+    			add_location(div, file, 23, 2, 945);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -64756,14 +64938,14 @@ var app = (function () {
     		block,
     		id: create_if_block_1.name,
     		type: "if",
-    		source: "(25:33) ",
+    		source: "(23:33) ",
     		ctx
     	});
 
     	return block;
     }
 
-    // (23:1) {#if Object.values($isLoadingData).includes(true)}
+    // (21:1) {#if Object.values($isLoadingData).includes(true)}
     function create_if_block(ctx) {
     	let loading;
     	let current;
@@ -64795,7 +64977,7 @@ var app = (function () {
     		block,
     		id: create_if_block.name,
     		type: "if",
-    		source: "(23:1) {#if Object.values($isLoadingData).includes(true)}",
+    		source: "(21:1) {#if Object.values($isLoadingData).includes(true)}",
     		ctx
     	});
 
@@ -64848,9 +65030,9 @@ var app = (function () {
     			t4 = space();
     			if (if_block) if_block.c();
     			attr_dev(h1, "class", "svelte-1na5kk7");
-    			add_location(h1, file, 16, 1, 854);
+    			add_location(h1, file, 14, 1, 757);
     			attr_dev(main, "class", "svelte-1na5kk7");
-    			add_location(main, file, 15, 0, 846);
+    			add_location(main, file, 13, 0, 749);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -64942,15 +65124,21 @@ var app = (function () {
 
     function instance($$self, $$props, $$invalidate) {
     	let $isLoadingData;
+    	let $userOptions;
+    	let $devOptions;
     	let $nutrientData;
     	let $waterData;
     	let $soilCharacteristics;
     	validate_store(isLoadingData, 'isLoadingData');
     	component_subscribe($$self, isLoadingData, $$value => $$invalidate(0, $isLoadingData = $$value));
+    	validate_store(userOptions, 'userOptions');
+    	component_subscribe($$self, userOptions, $$value => $$invalidate(2, $userOptions = $$value));
+    	validate_store(devOptions, 'devOptions');
+    	component_subscribe($$self, devOptions, $$value => $$invalidate(3, $devOptions = $$value));
     	validate_store(nutrientData, 'nutrientData');
-    	component_subscribe($$self, nutrientData, $$value => $$invalidate(2, $nutrientData = $$value));
+    	component_subscribe($$self, nutrientData, $$value => $$invalidate(4, $nutrientData = $$value));
     	validate_store(waterData, 'waterData');
-    	component_subscribe($$self, waterData, $$value => $$invalidate(3, $waterData = $$value));
+    	component_subscribe($$self, waterData, $$value => $$invalidate(5, $waterData = $$value));
     	validate_store(soilCharacteristics, 'soilCharacteristics');
     	component_subscribe($$self, soilCharacteristics, $$value => $$invalidate(1, $soilCharacteristics = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
@@ -64962,7 +65150,6 @@ var app = (function () {
     	});
 
     	$$self.$capture_state = () => ({
-    		LineChart,
     		LineCharts,
     		Loading,
     		LocationPicker,
@@ -64971,7 +65158,11 @@ var app = (function () {
     		waterData,
     		nutrientData,
     		isLoadingData,
+    		devOptions,
+    		userOptions,
     		$isLoadingData,
+    		$userOptions,
+    		$devOptions,
     		$nutrientData,
     		$waterData,
     		$soilCharacteristics
@@ -64982,12 +65173,20 @@ var app = (function () {
     			console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
     		}
 
-    		if ($$self.$$.dirty & /*$waterData*/ 8) {
+    		if ($$self.$$.dirty & /*$waterData*/ 32) {
     			console.log('APP WATERDATA: ', $waterData);
     		}
 
-    		if ($$self.$$.dirty & /*$nutrientData*/ 4) {
+    		if ($$self.$$.dirty & /*$nutrientData*/ 16) {
     			console.log('APP NUTRIENTDATA: ', $nutrientData);
+    		}
+
+    		if ($$self.$$.dirty & /*$devOptions*/ 8) {
+    			console.log('APP DEVOPTIONS: ', $devOptions);
+    		}
+
+    		if ($$self.$$.dirty & /*$userOptions*/ 4) {
+    			console.log('APP USEROPTIONS: ', $userOptions);
     		}
 
     		if ($$self.$$.dirty & /*$isLoadingData*/ 1) {
@@ -64995,7 +65194,14 @@ var app = (function () {
     		}
     	};
 
-    	return [$isLoadingData, $soilCharacteristics, $nutrientData, $waterData];
+    	return [
+    		$isLoadingData,
+    		$soilCharacteristics,
+    		$userOptions,
+    		$devOptions,
+    		$nutrientData,
+    		$waterData
+    	];
     }
 
     class App extends SvelteComponentDev {

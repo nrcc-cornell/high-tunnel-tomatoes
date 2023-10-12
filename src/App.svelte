@@ -1,23 +1,16 @@
 <script lang="ts">
-	import LineChart from "./components/LineChart.svelte";
   import LineCharts from "./components/LineCharts.svelte";
   import Loading from "./components/Loading.svelte";
 	import LocationPicker from "./components/locationPicker/LocationPicker.svelte";
   import ToolOptions from "./components/options/ToolOptions.svelte";
-	import { soilCharacteristics, waterData, nutrientData, isLoadingData } from "./store/store";
+	import { soilCharacteristics, waterData, nutrientData, isLoadingData, devOptions, userOptions } from "./store/store";
 
 	$: console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
 	$: console.log('APP WATERDATA: ', $waterData);
 	$: console.log('APP NUTRIENTDATA: ', $nutrientData);
+	$: console.log('APP DEVOPTIONS: ', $devOptions);
+	$: console.log('APP USEROPTIONS: ', $userOptions);
 	$: console.log('APP ISLOADINGDATA: ', JSON.stringify($isLoadingData, null, 2));
-
-
-
-	//// termination date selector, with checkbox saying 'Terminated?' for conditional display
-	//// show planting and termination dates on charts
-	//// initial zoom active
-
-
 
 </script>
 
@@ -33,8 +26,6 @@
 	{:else if !$soilCharacteristics}
 		<div class='no-soil-data'>Soil data could not be loaded for this location. Please try a different location.</div>
 	{/if}
-
-
 </main>
 
 <style>
