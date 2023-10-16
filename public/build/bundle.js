@@ -1072,14 +1072,15 @@ var app = (function () {
         const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
         console.log(gTheta, fastKN, fastN, gTheta * fastKN * fastN);
         let somLbs = convertOMPercentToLbAcre(som);
+        console.log(`somLbs: ${somLbs}`);
         const somMineralizedLbs = gTheta * somKN * somLbs;
-        console.log(`somLbs: ${somLbs}   somMineralizedLbs: ${somMineralizedLbs}`);
+        console.log(`somMineralizedLbs: ${somMineralizedLbs}`);
         const fastMineralizedLbs = gTheta * fastKN * fastN;
-        console.log(`somLbs: ${somLbs}   fastMineralizedLbs: ${fastMineralizedLbs}`);
+        console.log(`fastMineralizedLbs: ${fastMineralizedLbs}`);
         const mediumMineralizedLbs = gTheta * mediumKN * mediumN;
-        console.log(`somLbs: ${somLbs}   mediumMineralizedLbs: ${mediumMineralizedLbs}`);
+        console.log(`mediumMineralizedLbs: ${mediumMineralizedLbs}`);
         const slowMineralizedLbs = gTheta * slowKN * slowN;
-        console.log(`somLbs: ${somLbs}   slowMineralizedLbs: ${slowMineralizedLbs}`);
+        console.log(`slowMineralizedLbs: ${slowMineralizedLbs}`);
         const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
         const tnKgs = convertLbAcreToKgM2(tnLbs);
         const tnV = calcTNV(tnKgs, plantUptakeTheta);
@@ -1092,11 +1093,11 @@ var app = (function () {
         console.log(`UN: ${convertKgM2ToLbAcre(UN)}   QN: ${convertKgM2ToLbAcre(QN)}`);
         console.log(fastN, fastMineralizedLbs, otherRemoved, fastN - fastMineralizedLbs - otherRemoved);
         return {
-            tin: newTinLbs,
-            som: convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved),
-            fastN: fastN - fastMineralizedLbs - otherRemoved,
-            mediumN: mediumN - mediumMineralizedLbs - otherRemoved,
-            slowN: slowN - slowMineralizedLbs - otherRemoved
+            tin: Math.max(newTinLbs, 0),
+            som: Math.max(convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved), 0),
+            fastN: Math.max(fastN - fastMineralizedLbs - otherRemoved, 0),
+            mediumN: Math.max(mediumN - mediumMineralizedLbs - otherRemoved, 0),
+            slowN: Math.max(slowN - slowMineralizedLbs - otherRemoved, 0)
         };
     }
 
@@ -1286,15 +1287,15 @@ var app = (function () {
         let mediumN = 0;
         let slowN = 0;
         // Initialize output arrays
-        const vwcDaily = [(deficit + fc) / 18];
-        const tinDaily = [0];
-        const fastDaily = [0];
-        const mediumDaily = [0];
-        const slowDaily = [0];
+        const vwcDaily = [];
+        const tinDaily = [];
+        const fastDaily = [];
+        const mediumDaily = [];
+        const slowDaily = [];
         // Calculate daily drainage rate that occurs when soil water content is between saturation and field capacity
         const dailyPotentialDrainageRate = getPotentialDailyDrainage(soil_options[soilcap], devSD.soildrainageoptions[soilcap].daysToDrainToFcFromSat);
         // Loop through all days, starting with the second day (we already have the values for the initial day from model initialization)
-        for (let idx = 1; idx < pet.length; idx++) {
+        for (let idx = 0; idx < pet.length; idx++) {
             const date = dates[idx];
             daysSincePlanting += 1;
             daysSinceTermination += 1;
@@ -1356,6 +1357,7 @@ var app = (function () {
             }
             console.log('--------------------------------------');
             console.log(date);
+            console.log(tin, som, fastN, mediumN, slowN);
             const vwc = (deficit + fc) / 18;
             const mp = 0; //// matric potential that Josef needs to give for high, medium, low
             ({ tin, som, fastN, mediumN, slowN } = balanceNitrogen(vwc, fc / 18, mp, drainageTotal, hasPlants, -1 * totalDailyPET, tin, som, fastN, mediumN, slowN));
@@ -1365,6 +1367,9 @@ var app = (function () {
             mediumDaily.push(Math.round((mediumN / 2) * 1000) / 1000);
             slowDaily.push(Math.round((slowN / 2) * 1000) / 1000);
         }
+        console.log('-------------------------------------');
+        console.log('-------------------------------------');
+        console.log(vwcDaily);
         return {
             vwc: vwcDaily,
             tin: tinDaily,
@@ -19925,7 +19930,7 @@ var app = (function () {
     const { Object: Object_1$6 } = globals;
     const file$x = "src/components/LineChart.svelte";
 
-    // (175:2) {#if showResetZoomBtn}
+    // (177:2) {#if showResetZoomBtn}
     function create_if_block$l(ctx) {
     	let div;
     	let button;
@@ -19935,7 +19940,7 @@ var app = (function () {
     			props: {
     				btnType: "orange",
     				hidden: !/*$isZoomed*/ ctx[3],
-    				onClick: /*func_2*/ ctx[11],
+    				onClick: /*func_2*/ ctx[12],
     				$$slots: { default: [create_default_slot$d] },
     				$$scope: { ctx }
     			},
@@ -19947,7 +19952,7 @@ var app = (function () {
     			div = element("div");
     			create_component(button.$$.fragment);
     			attr_dev(div, "class", "btn-container svelte-cj9ofz");
-    			add_location(div, file$x, 175, 4, 4185);
+    			add_location(div, file$x, 177, 4, 4241);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -19957,9 +19962,9 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const button_changes = {};
     			if (dirty & /*$isZoomed*/ 8) button_changes.hidden = !/*$isZoomed*/ ctx[3];
-    			if (dirty & /*chart*/ 4) button_changes.onClick = /*func_2*/ ctx[11];
+    			if (dirty & /*chart*/ 4) button_changes.onClick = /*func_2*/ ctx[12];
 
-    			if (dirty & /*$$scope*/ 16384) {
+    			if (dirty & /*$$scope*/ 32768) {
     				button_changes.$$scope = { dirty, ctx };
     			}
 
@@ -19984,14 +19989,14 @@ var app = (function () {
     		block,
     		id: create_if_block$l.name,
     		type: "if",
-    		source: "(175:2) {#if showResetZoomBtn}",
+    		source: "(177:2) {#if showResetZoomBtn}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (176:31) <Button btnType='orange' hidden={!$isZoomed} onClick={() => handleResetZoom(chart)}>
+    // (178:31) <Button btnType='orange' hidden={!$isZoomed} onClick={() => handleResetZoom(chart)}>
     function create_default_slot$d(ctx) {
     	let t;
 
@@ -20011,7 +20016,7 @@ var app = (function () {
     		block,
     		id: create_default_slot$d.name,
     		type: "slot",
-    		source: "(176:31) <Button btnType='orange' hidden={!$isZoomed} onClick={() => handleResetZoom(chart)}>",
+    		source: "(178:31) <Button btnType='orange' hidden={!$isZoomed} onClick={() => handleResetZoom(chart)}>",
     		ctx
     	});
 
@@ -20026,14 +20031,14 @@ var app = (function () {
     	let current;
 
     	function chart_1_chart_binding(value) {
-    		/*chart_1_chart_binding*/ ctx[10](value);
+    		/*chart_1_chart_binding*/ ctx[11](value);
     	}
 
     	let chart_1_props = {
     		type: "line",
     		data: /*data*/ ctx[0],
     		options: /*baseOptions*/ ctx[5],
-    		plugins: [{ afterDraw: /*func*/ ctx[9] }, { beforeDraw: func_1$2 }]
+    		plugins: [{ afterDraw: /*func*/ ctx[10] }, { beforeDraw: func_1$2 }]
     	};
 
     	if (/*chart*/ ctx[2] !== void 0) {
@@ -20051,7 +20056,7 @@ var app = (function () {
     			t = space();
     			if (if_block) if_block.c();
     			attr_dev(div, "class", "chart-container svelte-cj9ofz");
-    			add_location(div, file$x, 146, 0, 3356);
+    			add_location(div, file$x, 148, 0, 3412);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -20066,7 +20071,7 @@ var app = (function () {
     		p: function update(ctx, [dirty]) {
     			const chart_1_changes = {};
     			if (dirty & /*data*/ 1) chart_1_changes.data = /*data*/ ctx[0];
-    			if (dirty & /*$hoverXPos*/ 16) chart_1_changes.plugins = [{ afterDraw: /*func*/ ctx[9] }, { beforeDraw: func_1$2 }];
+    			if (dirty & /*$hoverXPos*/ 16) chart_1_changes.plugins = [{ afterDraw: /*func*/ ctx[10] }, { beforeDraw: func_1$2 }];
 
     			if (!updating_chart && dirty & /*chart*/ 4) {
     				updating_chart = true;
@@ -20139,14 +20144,17 @@ var app = (function () {
 
     function instance$s($$self, $$props, $$invalidate) {
     	let $isZoomed;
+    	let $activeLocation;
     	let $hoverXPos;
     	let $hoverIdxPos;
     	validate_store(isZoomed, 'isZoomed');
     	component_subscribe($$self, isZoomed, $$value => $$invalidate(3, $isZoomed = $$value));
+    	validate_store(activeLocation, 'activeLocation');
+    	component_subscribe($$self, activeLocation, $$value => $$invalidate(9, $activeLocation = $$value));
     	validate_store(hoverXPos, 'hoverXPos');
     	component_subscribe($$self, hoverXPos, $$value => $$invalidate(4, $hoverXPos = $$value));
     	validate_store(hoverIdxPos, 'hoverIdxPos');
-    	component_subscribe($$self, hoverIdxPos, $$value => $$invalidate(12, $hoverIdxPos = $$value));
+    	component_subscribe($$self, hoverIdxPos, $$value => $$invalidate(13, $hoverIdxPos = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('LineChart', slots, []);
     	Chart$1.register(annotation, CategoryScale, LineController, LineElement, LinearScale, PointElement, plugin);
@@ -20312,6 +20320,7 @@ var app = (function () {
     		hoverXPos,
     		hoverIdxPos,
     		isZoomed,
+    		activeLocation,
     		annotationPlugin: annotation,
     		zoomPlugin: plugin,
     		ChartJS: Chart$1,
@@ -20330,6 +20339,7 @@ var app = (function () {
     		handleResetZoom,
     		updatePlugins,
     		$isZoomed,
+    		$activeLocation,
     		$hoverXPos,
     		$hoverIdxPos
     	});
@@ -20347,6 +20357,10 @@ var app = (function () {
     	}
 
     	$$self.$$.update = () => {
+    		if ($$self.$$.dirty & /*$activeLocation*/ 512) {
+    			(set_store_value(isZoomed, $isZoomed = true, $isZoomed));
+    		}
+
     		if ($$self.$$.dirty & /*plugins*/ 128) {
     			(updatePlugins());
     		}
@@ -20362,6 +20376,7 @@ var app = (function () {
     		handleResetZoom,
     		plugins,
     		yAxisLabel,
+    		$activeLocation,
     		func,
     		chart_1_chart_binding,
     		func_2

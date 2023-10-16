@@ -236,18 +236,18 @@ function runNutrientModel(
   let slowN = 0;
 
   // Initialize output arrays
-  const vwcDaily = [(deficit + fc) / 18];
-  const dd = [deficit];
-  const tinDaily = [0];
-  const fastDaily = [0];
-  const mediumDaily = [0];
-  const slowDaily = [0];
+  const vwcDaily = [];
+  const dd = [];
+  const tinDaily = [];
+  const fastDaily = [];
+  const mediumDaily = [];
+  const slowDaily = [];
 
   // Calculate daily drainage rate that occurs when soil water content is between saturation and field capacity
   const dailyPotentialDrainageRate = getPotentialDailyDrainage(soil_options[soilcap], devSD.soildrainageoptions[soilcap].daysToDrainToFcFromSat);
 
   // Loop through all days, starting with the second day (we already have the values for the initial day from model initialization)
-  for (let idx = 1; idx < pet.length; idx++) {
+  for (let idx = 0; idx < pet.length; idx++) {
     const date = dates[idx];
     daysSincePlanting += 1;
     daysSinceTermination += 1;
@@ -326,6 +326,7 @@ function runNutrientModel(
 
     console.log('--------------------------------------');
     console.log(date);
+    console.log(tin, som, fastN, mediumN, slowN);
 
     const vwc = (deficit + fc) / 18;
     const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
@@ -350,6 +351,10 @@ function runNutrientModel(
     mediumDaily.push(Math.round((mediumN / 2) * 1000) / 1000);
     slowDaily.push(Math.round((slowN / 2) * 1000) / 1000);
   }
+
+  console.log('-------------------------------------');
+  console.log('-------------------------------------');
+  console.log(vwcDaily);
 
   return {
     vwc: vwcDaily,

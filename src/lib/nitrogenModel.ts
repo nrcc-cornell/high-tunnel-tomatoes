@@ -73,15 +73,17 @@ export default function balanceNitrogen(
 
   console.log(gTheta, fastKN, fastN, gTheta * fastKN * fastN);
 
+
   let somLbs = convertOMPercentToLbAcre(som);
+  console.log(`somLbs: ${somLbs}`);
   const somMineralizedLbs = gTheta * somKN * somLbs;
-  console.log(`somLbs: ${somLbs}   somMineralizedLbs: ${somMineralizedLbs}`);
+  console.log(`somMineralizedLbs: ${somMineralizedLbs}`);
   const fastMineralizedLbs = gTheta * fastKN * fastN;
-  console.log(`somLbs: ${somLbs}   fastMineralizedLbs: ${fastMineralizedLbs}`);
+  console.log(`fastMineralizedLbs: ${fastMineralizedLbs}`);
   const mediumMineralizedLbs = gTheta * mediumKN * mediumN;
-  console.log(`somLbs: ${somLbs}   mediumMineralizedLbs: ${mediumMineralizedLbs}`);
+  console.log(`mediumMineralizedLbs: ${mediumMineralizedLbs}`);
   const slowMineralizedLbs = gTheta * slowKN * slowN;
-  console.log(`somLbs: ${somLbs}   slowMineralizedLbs: ${slowMineralizedLbs}`);
+  console.log(`slowMineralizedLbs: ${slowMineralizedLbs}`);
 
   const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
   const tnKgs = convertLbAcreToKgM2(tnLbs);
@@ -100,10 +102,10 @@ export default function balanceNitrogen(
   console.log(fastN, fastMineralizedLbs, otherRemoved, fastN - fastMineralizedLbs - otherRemoved);
 
   return {
-    tin: newTinLbs,
-    som: convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved),
-    fastN: fastN - fastMineralizedLbs - otherRemoved,
-    mediumN: mediumN - mediumMineralizedLbs - otherRemoved,
-    slowN: slowN - slowMineralizedLbs - otherRemoved
+    tin: Math.max(newTinLbs, 0),
+    som: Math.max(convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved), 0),
+    fastN: Math.max(fastN - fastMineralizedLbs - otherRemoved, 0),
+    mediumN: Math.max(mediumN - mediumMineralizedLbs - otherRemoved, 0),
+    slowN: Math.max(slowN - slowMineralizedLbs - otherRemoved, 0)
   };
 }

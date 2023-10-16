@@ -1,7 +1,7 @@
 <script>
   import { Chart } from 'svelte-chartjs';
   import { onMount } from 'svelte';
-  import { hoverXPos, hoverIdxPos, isZoomed } from '../store/store';
+  import { hoverXPos, hoverIdxPos, isZoomed, activeLocation } from '../store/store';
   
   import annotationPlugin from 'chartjs-plugin-annotation';
   import zoomPlugin from 'chartjs-plugin-zoom';
@@ -134,6 +134,8 @@
     }
     $isZoomed = false;
   }
+
+  $:$activeLocation, $isZoomed = true;
 
   function updatePlugins() {
     if (plugins && chart) {
