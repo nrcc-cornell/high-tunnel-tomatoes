@@ -162,25 +162,25 @@ const categorizeTexture = (clay: number, sand: number, silt: number): SoilMoistu
 };
 
 export async function getSoilCharacteristics(activeLocation) {
-  // const soilColumnData = await fetchSoilColumnDataViaPostRest([activeLocation.lon, activeLocation.lat]);
-  // if (!soilColumnData) return null;
-  // const soilTypes = convertIntoSoilTypes(soilColumnData);
-  // const [ avgClay, avgSand, avgSilt, avgOM, avgBD ] = calcAvgSoilComp(soilTypes);
-  // return {
-  //   waterCapacity: categorizeTexture(avgClay, avgSand, avgSilt),
-  //   composition: { clay: Math.round(avgClay), sand: Math.round(avgSand), silt: Math.round(avgSilt) },
-  //   organicMatter: Math.round(avgOM),
-  //   bulkDensity: avgBD
-  // };
-
+  const soilColumnData = await fetchSoilColumnDataViaPostRest([activeLocation.lon, activeLocation.lat]);
+  if (!soilColumnData) return null;
+  const soilTypes = convertIntoSoilTypes(soilColumnData);
+  const [ avgClay, avgSand, avgSilt, avgOM, avgBD ] = calcAvgSoilComp(soilTypes);
   return {
-    "waterCapacity": "medium",
-    "composition": {
-      "clay": 1,
-      "sand": 21,
-      "silt": 11
-    },
-    "organicMatter": 1,
-    "bulkDensity": 0.43910569105691066
+    waterCapacity: categorizeTexture(avgClay, avgSand, avgSilt),
+    composition: { clay: Math.round(avgClay), sand: Math.round(avgSand), silt: Math.round(avgSilt) },
+    organicMatter: Math.round(avgOM),
+    bulkDensity: avgBD
   };
+
+  // return {
+  //   "waterCapacity": "medium",
+  //   "composition": {
+  //     "clay": 1,
+  //     "sand": 21,
+  //     "silt": 11
+  //   },
+  //   "organicMatter": 1,
+  //   "bulkDensity": 0.43910569105691066
+  // };
 }

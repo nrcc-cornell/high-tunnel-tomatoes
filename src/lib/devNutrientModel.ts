@@ -324,9 +324,9 @@ function runNutrientModel(
       tin = lastTest.inorganicN;
     }
 
-    console.log('--------------------------------------');
-    console.log(date);
-    console.log(tin, som, fastN, mediumN, slowN);
+    // console.log('--------------------------------------');
+    // console.log(date);
+    // console.log(tin, som, fastN, mediumN, slowN);
 
     const vwc = (deficit + fc) / 18;
     const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
@@ -352,9 +352,9 @@ function runNutrientModel(
     slowDaily.push(Math.round((slowN / 2) * 1000) / 1000);
   }
 
-  console.log('-------------------------------------');
-  console.log('-------------------------------------');
-  console.log(vwcDaily);
+  // console.log('-------------------------------------');
+  // console.log('-------------------------------------');
+  // console.log(vwcDaily);
 
   return {
     vwc: vwcDaily,

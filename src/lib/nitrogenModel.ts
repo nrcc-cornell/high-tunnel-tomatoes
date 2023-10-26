@@ -71,20 +71,21 @@ export default function balanceNitrogen(
   const gTheta = (fc - mp)/(vwc - mp); //// supposed to be equation from Josef
   const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
 
-  console.log(gTheta, fastKN, fastN, gTheta * fastKN * fastN);
-
-
   let somLbs = convertOMPercentToLbAcre(som);
-  console.log(`somLbs: ${somLbs}`);
   const somMineralizedLbs = gTheta * somKN * somLbs;
-  console.log(`somMineralizedLbs: ${somMineralizedLbs}`);
   const fastMineralizedLbs = gTheta * fastKN * fastN;
-  console.log(`fastMineralizedLbs: ${fastMineralizedLbs}`);
   const mediumMineralizedLbs = gTheta * mediumKN * mediumN;
-  console.log(`mediumMineralizedLbs: ${mediumMineralizedLbs}`);
   const slowMineralizedLbs = gTheta * slowKN * slowN;
-  console.log(`slowMineralizedLbs: ${slowMineralizedLbs}`);
+  
+  
+  // console.log(gTheta, fastKN, fastN, gTheta * fastKN * fastN);
+  // console.log(`somLbs: ${somLbs}`);
+  // console.log(`somMineralizedLbs: ${somMineralizedLbs}`);
+  // console.log(`fastMineralizedLbs: ${fastMineralizedLbs}`);
+  // console.log(`mediumMineralizedLbs: ${mediumMineralizedLbs}`);
+  // console.log(`slowMineralizedLbs: ${slowMineralizedLbs}`);
 
+  
   const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
   const tnKgs = convertLbAcreToKgM2(tnLbs);
   const tnV = calcTNV(tnKgs, plantUptakeTheta);
@@ -97,9 +98,9 @@ export default function balanceNitrogen(
 
   const otherRemoved = (convertKgM2ToLbAcre(UN) + convertKgM2ToLbAcre(QN)) / 4;
 
-  console.log(`TIN LBS/ACRE: ${newTinLbs}`);
-  console.log(`UN: ${convertKgM2ToLbAcre(UN)}   QN: ${convertKgM2ToLbAcre(QN)}`);
-  console.log(fastN, fastMineralizedLbs, otherRemoved, fastN - fastMineralizedLbs - otherRemoved);
+  // console.log(`TIN LBS/ACRE: ${newTinLbs}`);
+  // console.log(`UN: ${convertKgM2ToLbAcre(UN)}   QN: ${convertKgM2ToLbAcre(QN)}`);
+  // console.log(fastN, fastMineralizedLbs, otherRemoved, fastN - fastMineralizedLbs - otherRemoved);
 
   return {
     tin: Math.max(newTinLbs, 0),
