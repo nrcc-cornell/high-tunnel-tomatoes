@@ -55,4 +55,7 @@
   * :global(.shaped-outlined .mdc-text-field__input) {
     padding-left: 15px;
   }
+  * :global(.mdc-text-field__input::-webkit-calendar-picker-indicator) {
+    display: initial !important;
+  } 
 </style>

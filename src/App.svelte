@@ -16,7 +16,7 @@
 
 <main>
 	<h1>High Tunnel Tomatoes</h1>
-	
+
 	<LocationPicker />
 	<ToolOptions />
 	<LineCharts />
