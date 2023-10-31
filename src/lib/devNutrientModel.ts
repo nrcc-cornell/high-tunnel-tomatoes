@@ -234,6 +234,7 @@ function runNutrientModel(
   let fastN = 0;
   let mediumN = 0;
   let slowN = 0;
+  let tableOut;
 
   // Initialize output arrays
   const vwcDaily = [];
@@ -242,6 +243,17 @@ function runNutrientModel(
   const fastDaily = [];
   const mediumDaily = [];
   const slowDaily = [];
+  const table = [[
+    'Date',
+    'Start Inorg. N.',
+    'End Inorg. N.',
+    'SOM Min.',
+    'Fast N. Min.',
+    'Med. N. Min.',
+    'Slow N. Min.',
+    'Plant Uptake',
+    'Transport'
+  ]];
 
   // Calculate daily drainage rate that occurs when soil water content is between saturation and field capacity
   const dailyPotentialDrainageRate = getPotentialDailyDrainage(soil_options[soilcap], devSD.soildrainageoptions[soilcap].daysToDrainToFcFromSat);
@@ -330,7 +342,7 @@ function runNutrientModel(
 
     const vwc = (deficit + fc) / 18;
     const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
-    ({tin, som, fastN, mediumN, slowN} = balanceNitrogen(
+    ({tin, som, fastN, mediumN, slowN, tableOut} = balanceNitrogen(
       vwc,
       fc / 18,
       mp,
@@ -341,7 +353,8 @@ function runNutrientModel(
       som,
       fastN,
       mediumN,
-      slowN
+      slowN,
+      date
     ));
 
     dd.push(deficit);
@@ -350,6 +363,7 @@ function runNutrientModel(
     fastDaily.push(Math.round((fastN / 2) * 1000) / 1000);
     mediumDaily.push(Math.round((mediumN / 2) * 1000) / 1000);
     slowDaily.push(Math.round((slowN / 2) * 1000) / 1000);
+    table.push(tableOut);
   }
 
   // console.log('-------------------------------------');
@@ -362,6 +376,7 @@ function runNutrientModel(
     fastN: fastDaily,
     mediumN: mediumDaily,
     slowN: slowDaily,
+    table
     // dd
   };
 }

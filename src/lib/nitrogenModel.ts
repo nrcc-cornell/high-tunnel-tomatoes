@@ -55,7 +55,8 @@ export default function balanceNitrogen(
   som: number,
   fastN: number,
   mediumN: number,
-  slowN: number
+  slowN: number,
+  date: string
 ) {
   //  -------------------------------------------------------------
   //  Calculate soil inorganic nitrogen (lbs/acre) from daily volumetric water content, 
@@ -96,7 +97,9 @@ export default function balanceNitrogen(
   const newTinKgs = tnKgs - UN - QN;
   const newTinLbs = convertKgM2ToLbAcre(newTinKgs);
 
-  const otherRemoved = (convertKgM2ToLbAcre(UN) + convertKgM2ToLbAcre(QN)) / 4;
+  const unLbs = convertKgM2ToLbAcre(UN);
+  const qnLbs = convertKgM2ToLbAcre(QN);
+  const otherRemoved = (unLbs + qnLbs) / 4;
 
   // console.log(`TIN LBS/ACRE: ${newTinLbs}`);
   // console.log(`UN: ${convertKgM2ToLbAcre(UN)}   QN: ${convertKgM2ToLbAcre(QN)}`);
@@ -107,6 +110,17 @@ export default function balanceNitrogen(
     som: Math.max(convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved), 0),
     fastN: Math.max(fastN - fastMineralizedLbs - otherRemoved, 0),
     mediumN: Math.max(mediumN - mediumMineralizedLbs - otherRemoved, 0),
-    slowN: Math.max(slowN - slowMineralizedLbs - otherRemoved, 0)
+    slowN: Math.max(slowN - slowMineralizedLbs - otherRemoved, 0),
+    tableOut: [
+      date,
+      Math.round((tin / 2) * 1000) / 1000,
+      Math.max(Math.round((newTinLbs / 2) * 1000) / 1000, 0),
+      Math.max(Math.round((somMineralizedLbs / 2) * 1000) / 1000,0),
+      Math.max(Math.round((fastMineralizedLbs / 2) * 1000) / 1000,0),
+      Math.max(Math.round((mediumMineralizedLbs / 2) * 1000) / 1000,0),
+      Math.max(Math.round((slowMineralizedLbs / 2) * 1000) / 1000,0),
+      Math.max(Math.round((unLbs / 2) * 1000) / 1000,0),
+      Math.max(Math.round((qnLbs / 2) * 1000) / 1000,0)
+    ]
   };
 }

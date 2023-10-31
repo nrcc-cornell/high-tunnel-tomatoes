@@ -1,5 +1,6 @@
 <script lang="ts">
-  import LineCharts from "./components/LineCharts.svelte";
+  import DataTable from "./components/DataTable.svelte";
+	import LineCharts from "./components/LineCharts.svelte";
   import Loading from "./components/Loading.svelte";
 	import LocationPicker from "./components/locationPicker/LocationPicker.svelte";
   import ToolOptions from "./components/options/ToolOptions.svelte";
@@ -20,6 +21,7 @@
 	<LocationPicker />
 	<ToolOptions />
 	<LineCharts />
+	<DataTable />
 
 	{#if Object.values($isLoadingData).includes(true)}
 		<Loading />

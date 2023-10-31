@@ -34,15 +34,16 @@ function changeLoading(key, setTo) {
 
 export const locations = writable<null | { [key: string]: LocationObj }>(loadLocations());
 export const activeLocationId = writable(loadActiveLocationId());
-export const activeLocation = derived([locations, activeLocationId], ([$locations, $activeLocationId]) => {
-  if ($locations && $activeLocationId && Object.keys($locations).includes($activeLocationId)) {
+export const activeLocation = derived(activeLocationId, ($activeLocationId) => {
+  const locs = get(locations);
+  if (locs && $activeLocationId && Object.keys(locs).includes($activeLocationId)) {
     isLoadingData.set({
       ...get(isLoadingData),
       waterData: true,
       soilCharacteristics: true,
       nutrientModel: true
     });
-    return $locations[$activeLocationId];
+    return locs[$activeLocationId];
   } else {
     return null;
   }
@@ -67,6 +68,8 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
 
     let newUO = null;
     const loaded = loadOptions();
+    console.log(70, JSON.stringify(loaded), newSC, $activeLocation);
+    console.log(71, loaded ? Object.keys(loaded).includes($activeLocation.id) : null);
     if (loaded && Object.keys(loaded).includes($activeLocation.id)) {
       newUO = loaded[$activeLocation.id];
     } else if (newSC) {
@@ -127,6 +130,9 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
         //   }
         // }
       };
+    }
+    if (get(userOptions) === null && newUO === null) {
+      changeLoading('nutrientModel', false);
     }
     userOptions.set(newUO);
   }
