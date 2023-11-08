@@ -88,7 +88,7 @@ async function fetchPrecip(lat, lon, eDate) {
   ])
 
 
-  while (obsPrecip[obsPrecip.length - 1][0] === forePrecip[0][0]) {
+  while (forePrecip.length && obsPrecip[obsPrecip.length - 1][0] === forePrecip[0][0]) {
     forePrecip.shift();
   }
 
@@ -144,8 +144,9 @@ export async function getWaterData({ lat, lon }, date) {
       fcstLength: Math.max(precipFcstLength, petFcstLength)
     };
 
+    console.log(precip);
     // loop through data pushing to results obj and ensuring that the dates match
-    for (let i = 0; i < pet.length; i++) {
+    for (let i = 0; i < Math.min(pet.length, precip.length); i++) {
       const [petDate, petValue] = pet[i];
       const [precipDate, precipValue] = precip[i];
       
