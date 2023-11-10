@@ -1023,10 +1023,10 @@ var app = (function () {
 
     const rootDepthInches = 18;
     const rootDepthMeters = convertInToM(rootDepthInches);
-    const somKN = 0.000083;
-    const fastKN = 0.1;
-    const mediumKN = 0.003;
-    const slowKN = 0.0002;
+    // const somKN = 0.000083;
+    // const fastKN = 0.1;
+    // const mediumKN = 0.003;
+    // const slowKN = 0.0002;
     function convertInToM(inches) {
         // inches / 39.37 = meters
         return inches / 39.37;
@@ -1058,7 +1058,7 @@ var app = (function () {
         const drainageMeters = convertInToM(drainageInches);
         return tnV * drainageMeters;
     }
-    function balanceNitrogen(vwc, fc, mp, drainage, hasPlants, pet, tin, som, fastN, mediumN, slowN, date) {
+    function balanceNitrogen(vwc, fc, mp, drainage, hasPlants, pet, tin, som, fastN, mediumN, slowN, date, somKN, fastKN, mediumKN, slowKN) {
         //  -------------------------------------------------------------
         //  Calculate soil inorganic nitrogen (lbs/acre) from daily volumetric water content, 
         //    nitrogen application dates and amounts, and an initial soil organic matter percentage
@@ -1196,7 +1196,11 @@ var app = (function () {
             low: { daysToDrainToFcFromSat: 0.125 },
             medium: { daysToDrainToFcFromSat: 1.0 },
             high: { daysToDrainToFcFromSat: 2.0 },
-        }
+        },
+        somKN: 0.000083,
+        fastKN: 0.1,
+        mediumKN: 0.003,
+        slowKN: 0.0002
     };
     function getCropCoeff(numdays, devSD) {
         // -----------------------------------------------------------------------------------------
@@ -1286,7 +1290,7 @@ var app = (function () {
         //  irrigationIdxs  : array of indices where the user irrigated
         //
         // -----------------------------------------------------------------------------------------
-        const soil_options = devSD.soilmoistureoptions;
+        const { soilmoistureoptions: soil_options, somKN, fastKN, mediumKN, slowKN } = devSD;
         // Calculate number of days since planting, negative value means current days in loop below is before planting
         let daysSincePlanting = Math.floor((Date.parse(plantingDate.getFullYear() + '-03-01') - plantingDate.getTime()) / 86400000 + 1);
         let daysSinceTermination = Math.floor((Date.parse(terminationDate.getFullYear() + '-03-01') - terminationDate.getTime()) / 86400000 + 1);
@@ -1385,7 +1389,7 @@ var app = (function () {
             // console.log(tin, som, fastN, mediumN, slowN);
             const vwc = (deficit + fc) / 18;
             const mp = 0; //// matric potential that Josef needs to give for high, medium, low
-            ({ tin, som, fastN, mediumN, slowN, tableOut } = balanceNitrogen(vwc, fc / 18, mp, drainageTotal, hasPlants, -1 * totalDailyPET, tin, som, fastN, mediumN, slowN, date));
+            ({ tin, som, fastN, mediumN, slowN, tableOut } = balanceNitrogen(vwc, fc / 18, mp, drainageTotal, hasPlants, -1 * totalDailyPET, tin, som, fastN, mediumN, slowN, date, somKN, fastKN, mediumKN, slowKN));
             vwcDaily.push(Math.round(vwc * 1000) / 1000);
             tinDaily.push(Math.round((tin / 2) * 1000) / 1000);
             fastDaily.push(Math.round((fastN / 2) * 1000) / 1000);
@@ -1555,13 +1559,2548 @@ var app = (function () {
         // };
     }
 
+    function _typeof(o) {
+      "@babel/helpers - typeof";
+
+      return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) {
+        return typeof o;
+      } : function (o) {
+        return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o;
+      }, _typeof(o);
+    }
+
+    function toInteger(dirtyNumber) {
+      if (dirtyNumber === null || dirtyNumber === true || dirtyNumber === false) {
+        return NaN;
+      }
+      var number = Number(dirtyNumber);
+      if (isNaN(number)) {
+        return number;
+      }
+      return number < 0 ? Math.ceil(number) : Math.floor(number);
+    }
+
+    function requiredArgs(required, args) {
+      if (args.length < required) {
+        throw new TypeError(required + ' argument' + (required > 1 ? 's' : '') + ' required, but only ' + args.length + ' present');
+      }
+    }
+
+    /**
+     * @name toDate
+     * @category Common Helpers
+     * @summary Convert the given argument to an instance of Date.
+     *
+     * @description
+     * Convert the given argument to an instance of Date.
+     *
+     * If the argument is an instance of Date, the function returns its clone.
+     *
+     * If the argument is a number, it is treated as a timestamp.
+     *
+     * If the argument is none of the above, the function returns Invalid Date.
+     *
+     * **Note**: *all* Date arguments passed to any *date-fns* function is processed by `toDate`.
+     *
+     * @param {Date|Number} argument - the value to convert
+     * @returns {Date} the parsed date in the local time zone
+     * @throws {TypeError} 1 argument required
+     *
+     * @example
+     * // Clone the date:
+     * const result = toDate(new Date(2014, 1, 11, 11, 30, 30))
+     * //=> Tue Feb 11 2014 11:30:30
+     *
+     * @example
+     * // Convert the timestamp to date:
+     * const result = toDate(1392098430000)
+     * //=> Tue Feb 11 2014 11:30:30
+     */
+    function toDate(argument) {
+      requiredArgs(1, arguments);
+      var argStr = Object.prototype.toString.call(argument);
+
+      // Clone the date
+      if (argument instanceof Date || _typeof(argument) === 'object' && argStr === '[object Date]') {
+        // Prevent the date to lose the milliseconds when passed to new Date() in IE10
+        return new Date(argument.getTime());
+      } else if (typeof argument === 'number' || argStr === '[object Number]') {
+        return new Date(argument);
+      } else {
+        if ((typeof argument === 'string' || argStr === '[object String]') && typeof console !== 'undefined') {
+          // eslint-disable-next-line no-console
+          console.warn("Starting with v2.0.0-beta.1 date-fns doesn't accept strings as date arguments. Please use `parseISO` to parse strings. See: https://github.com/date-fns/date-fns/blob/master/docs/upgradeGuide.md#string-arguments");
+          // eslint-disable-next-line no-console
+          console.warn(new Error().stack);
+        }
+        return new Date(NaN);
+      }
+    }
+
+    /**
+     * @name addDays
+     * @category Day Helpers
+     * @summary Add the specified number of days to the given date.
+     *
+     * @description
+     * Add the specified number of days to the given date.
+     *
+     * @param {Date|Number} date - the date to be changed
+     * @param {Number} amount - the amount of days to be added. Positive decimals will be rounded using `Math.floor`, decimals less than zero will be rounded using `Math.ceil`.
+     * @returns {Date} - the new date with the days added
+     * @throws {TypeError} - 2 arguments required
+     *
+     * @example
+     * // Add 10 days to 1 September 2014:
+     * const result = addDays(new Date(2014, 8, 1), 10)
+     * //=> Thu Sep 11 2014 00:00:00
+     */
+    function addDays(dirtyDate, dirtyAmount) {
+      requiredArgs(2, arguments);
+      var date = toDate(dirtyDate);
+      var amount = toInteger(dirtyAmount);
+      if (isNaN(amount)) {
+        return new Date(NaN);
+      }
+      if (!amount) {
+        // If 0 days, no-op to avoid changing times in the hour before end of DST
+        return date;
+      }
+      date.setDate(date.getDate() + amount);
+      return date;
+    }
+
+    /**
+     * @name addMonths
+     * @category Month Helpers
+     * @summary Add the specified number of months to the given date.
+     *
+     * @description
+     * Add the specified number of months to the given date.
+     *
+     * @param {Date|Number} date - the date to be changed
+     * @param {Number} amount - the amount of months to be added. Positive decimals will be rounded using `Math.floor`, decimals less than zero will be rounded using `Math.ceil`.
+     * @returns {Date} the new date with the months added
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // Add 5 months to 1 September 2014:
+     * const result = addMonths(new Date(2014, 8, 1), 5)
+     * //=> Sun Feb 01 2015 00:00:00
+     */
+    function addMonths(dirtyDate, dirtyAmount) {
+      requiredArgs(2, arguments);
+      var date = toDate(dirtyDate);
+      var amount = toInteger(dirtyAmount);
+      if (isNaN(amount)) {
+        return new Date(NaN);
+      }
+      if (!amount) {
+        // If 0 months, no-op to avoid changing times in the hour before end of DST
+        return date;
+      }
+      var dayOfMonth = date.getDate();
+
+      // The JS Date object supports date math by accepting out-of-bounds values for
+      // month, day, etc. For example, new Date(2020, 0, 0) returns 31 Dec 2019 and
+      // new Date(2020, 13, 1) returns 1 Feb 2021.  This is *almost* the behavior we
+      // want except that dates will wrap around the end of a month, meaning that
+      // new Date(2020, 13, 31) will return 3 Mar 2021 not 28 Feb 2021 as desired. So
+      // we'll default to the end of the desired month by adding 1 to the desired
+      // month and using a date of 0 to back up one day to the end of the desired
+      // month.
+      var endOfDesiredMonth = new Date(date.getTime());
+      endOfDesiredMonth.setMonth(date.getMonth() + amount + 1, 0);
+      var daysInMonth = endOfDesiredMonth.getDate();
+      if (dayOfMonth >= daysInMonth) {
+        // If we're already at the end of the month, then this is the correct date
+        // and we're done.
+        return endOfDesiredMonth;
+      } else {
+        // Otherwise, we now know that setting the original day-of-month value won't
+        // cause an overflow, so set the desired day-of-month. Note that we can't
+        // just set the date of `endOfDesiredMonth` because that object may have had
+        // its time changed in the unusual case where where a DST transition was on
+        // the last day of the month and its local time was in the hour skipped or
+        // repeated next to a DST transition.  So we use `date` instead which is
+        // guaranteed to still have the original time.
+        date.setFullYear(endOfDesiredMonth.getFullYear(), endOfDesiredMonth.getMonth(), dayOfMonth);
+        return date;
+      }
+    }
+
+    /**
+     * @name addMilliseconds
+     * @category Millisecond Helpers
+     * @summary Add the specified number of milliseconds to the given date.
+     *
+     * @description
+     * Add the specified number of milliseconds to the given date.
+     *
+     * @param {Date|Number} date - the date to be changed
+     * @param {Number} amount - the amount of milliseconds to be added. Positive decimals will be rounded using `Math.floor`, decimals less than zero will be rounded using `Math.ceil`.
+     * @returns {Date} the new date with the milliseconds added
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // Add 750 milliseconds to 10 July 2014 12:45:30.000:
+     * const result = addMilliseconds(new Date(2014, 6, 10, 12, 45, 30, 0), 750)
+     * //=> Thu Jul 10 2014 12:45:30.750
+     */
+    function addMilliseconds(dirtyDate, dirtyAmount) {
+      requiredArgs(2, arguments);
+      var timestamp = toDate(dirtyDate).getTime();
+      var amount = toInteger(dirtyAmount);
+      return new Date(timestamp + amount);
+    }
+
+    var defaultOptions = {};
+    function getDefaultOptions() {
+      return defaultOptions;
+    }
+
+    /**
+     * Google Chrome as of 67.0.3396.87 introduced timezones with offset that includes seconds.
+     * They usually appear for dates that denote time before the timezones were introduced
+     * (e.g. for 'Europe/Prague' timezone the offset is GMT+00:57:44 before 1 October 1891
+     * and GMT+01:00:00 after that date)
+     *
+     * Date#getTimezoneOffset returns the offset in minutes and would return 57 for the example above,
+     * which would lead to incorrect calculations.
+     *
+     * This function returns the timezone offset in milliseconds that takes seconds in account.
+     */
+    function getTimezoneOffsetInMilliseconds(date) {
+      var utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds()));
+      utcDate.setUTCFullYear(date.getFullYear());
+      return date.getTime() - utcDate.getTime();
+    }
+
+    /**
+     * @name startOfDay
+     * @category Day Helpers
+     * @summary Return the start of a day for the given date.
+     *
+     * @description
+     * Return the start of a day for the given date.
+     * The result will be in the local timezone.
+     *
+     * @param {Date|Number} date - the original date
+     * @returns {Date} the start of a day
+     * @throws {TypeError} 1 argument required
+     *
+     * @example
+     * // The start of a day for 2 September 2014 11:55:00:
+     * const result = startOfDay(new Date(2014, 8, 2, 11, 55, 0))
+     * //=> Tue Sep 02 2014 00:00:00
+     */
+    function startOfDay(dirtyDate) {
+      requiredArgs(1, arguments);
+      var date = toDate(dirtyDate);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    }
+
+    var MILLISECONDS_IN_DAY$1 = 86400000;
+
+    /**
+     * @name differenceInCalendarDays
+     * @category Day Helpers
+     * @summary Get the number of calendar days between the given dates.
+     *
+     * @description
+     * Get the number of calendar days between the given dates. This means that the times are removed
+     * from the dates and then the difference in days is calculated.
+     *
+     * @param {Date|Number} dateLeft - the later date
+     * @param {Date|Number} dateRight - the earlier date
+     * @returns {Number} the number of calendar days
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // How many calendar days are between
+     * // 2 July 2011 23:00:00 and 2 July 2012 00:00:00?
+     * const result = differenceInCalendarDays(
+     *   new Date(2012, 6, 2, 0, 0),
+     *   new Date(2011, 6, 2, 23, 0)
+     * )
+     * //=> 366
+     * // How many calendar days are between
+     * // 2 July 2011 23:59:00 and 3 July 2011 00:01:00?
+     * const result = differenceInCalendarDays(
+     *   new Date(2011, 6, 3, 0, 1),
+     *   new Date(2011, 6, 2, 23, 59)
+     * )
+     * //=> 1
+     */
+    function differenceInCalendarDays(dirtyDateLeft, dirtyDateRight) {
+      requiredArgs(2, arguments);
+      var startOfDayLeft = startOfDay(dirtyDateLeft);
+      var startOfDayRight = startOfDay(dirtyDateRight);
+      var timestampLeft = startOfDayLeft.getTime() - getTimezoneOffsetInMilliseconds(startOfDayLeft);
+      var timestampRight = startOfDayRight.getTime() - getTimezoneOffsetInMilliseconds(startOfDayRight);
+
+      // Round the number of days to the nearest integer
+      // because the number of milliseconds in a day is not constant
+      // (e.g. it's different in the day of the daylight saving time clock shift)
+      return Math.round((timestampLeft - timestampRight) / MILLISECONDS_IN_DAY$1);
+    }
+
+    /**
+     * @name addYears
+     * @category Year Helpers
+     * @summary Add the specified number of years to the given date.
+     *
+     * @description
+     * Add the specified number of years to the given date.
+     *
+     * @param {Date|Number} date - the date to be changed
+     * @param {Number} amount - the amount of years to be added. Positive decimals will be rounded using `Math.floor`, decimals less than zero will be rounded using `Math.ceil`.
+     * @returns {Date} the new date with the years added
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // Add 5 years to 1 September 2014:
+     * const result = addYears(new Date(2014, 8, 1), 5)
+     * //=> Sun Sep 01 2019 00:00:00
+     */
+    function addYears(dirtyDate, dirtyAmount) {
+      requiredArgs(2, arguments);
+      var amount = toInteger(dirtyAmount);
+      return addMonths(dirtyDate, amount * 12);
+    }
+
+    /**
+     * @name isDate
+     * @category Common Helpers
+     * @summary Is the given value a date?
+     *
+     * @description
+     * Returns true if the given value is an instance of Date. The function works for dates transferred across iframes.
+     *
+     * @param {*} value - the value to check
+     * @returns {boolean} true if the given value is a date
+     * @throws {TypeError} 1 arguments required
+     *
+     * @example
+     * // For a valid date:
+     * const result = isDate(new Date())
+     * //=> true
+     *
+     * @example
+     * // For an invalid date:
+     * const result = isDate(new Date(NaN))
+     * //=> true
+     *
+     * @example
+     * // For some value:
+     * const result = isDate('2014-02-31')
+     * //=> false
+     *
+     * @example
+     * // For an object:
+     * const result = isDate({})
+     * //=> false
+     */
+    function isDate(value) {
+      requiredArgs(1, arguments);
+      return value instanceof Date || _typeof(value) === 'object' && Object.prototype.toString.call(value) === '[object Date]';
+    }
+
+    /**
+     * @name isValid
+     * @category Common Helpers
+     * @summary Is the given date valid?
+     *
+     * @description
+     * Returns false if argument is Invalid Date and true otherwise.
+     * Argument is converted to Date using `toDate`. See [toDate]{@link https://date-fns.org/docs/toDate}
+     * Invalid Date is a Date, whose time value is NaN.
+     *
+     * Time value of Date: http://es5.github.io/#x15.9.1.1
+     *
+     * @param {*} date - the date to check
+     * @returns {Boolean} the date is valid
+     * @throws {TypeError} 1 argument required
+     *
+     * @example
+     * // For the valid date:
+     * const result = isValid(new Date(2014, 1, 31))
+     * //=> true
+     *
+     * @example
+     * // For the value, convertable into a date:
+     * const result = isValid(1393804800000)
+     * //=> true
+     *
+     * @example
+     * // For the invalid date:
+     * const result = isValid(new Date(''))
+     * //=> false
+     */
+    function isValid(dirtyDate) {
+      requiredArgs(1, arguments);
+      if (!isDate(dirtyDate) && typeof dirtyDate !== 'number') {
+        return false;
+      }
+      var date = toDate(dirtyDate);
+      return !isNaN(Number(date));
+    }
+
+    // for accurate equality comparisons of UTC timestamps that end up
+    // having the same representation in local time, e.g. one hour before
+    // DST ends vs. the instant that DST ends.
+    function compareLocalAsc(dateLeft, dateRight) {
+      var diff = dateLeft.getFullYear() - dateRight.getFullYear() || dateLeft.getMonth() - dateRight.getMonth() || dateLeft.getDate() - dateRight.getDate() || dateLeft.getHours() - dateRight.getHours() || dateLeft.getMinutes() - dateRight.getMinutes() || dateLeft.getSeconds() - dateRight.getSeconds() || dateLeft.getMilliseconds() - dateRight.getMilliseconds();
+      if (diff < 0) {
+        return -1;
+      } else if (diff > 0) {
+        return 1;
+        // Return 0 if diff is 0; return NaN if diff is NaN
+      } else {
+        return diff;
+      }
+    }
+
+    /**
+     * @name differenceInDays
+     * @category Day Helpers
+     * @summary Get the number of full days between the given dates.
+     *
+     * @description
+     * Get the number of full day periods between two dates. Fractional days are
+     * truncated towards zero.
+     *
+     * One "full day" is the distance between a local time in one day to the same
+     * local time on the next or previous day. A full day can sometimes be less than
+     * or more than 24 hours if a daylight savings change happens between two dates.
+     *
+     * To ignore DST and only measure exact 24-hour periods, use this instead:
+     * `Math.floor(differenceInHours(dateLeft, dateRight)/24)|0`.
+     *
+     *
+     * @param {Date|Number} dateLeft - the later date
+     * @param {Date|Number} dateRight - the earlier date
+     * @returns {Number} the number of full days according to the local timezone
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // How many full days are between
+     * // 2 July 2011 23:00:00 and 2 July 2012 00:00:00?
+     * const result = differenceInDays(
+     *   new Date(2012, 6, 2, 0, 0),
+     *   new Date(2011, 6, 2, 23, 0)
+     * )
+     * //=> 365
+     * // How many full days are between
+     * // 2 July 2011 23:59:00 and 3 July 2011 00:01:00?
+     * const result = differenceInDays(
+     *   new Date(2011, 6, 3, 0, 1),
+     *   new Date(2011, 6, 2, 23, 59)
+     * )
+     * //=> 0
+     * // How many full days are between
+     * // 1 March 2020 0:00 and 1 June 2020 0:00 ?
+     * // Note: because local time is used, the
+     * // result will always be 92 days, even in
+     * // time zones where DST starts and the
+     * // period has only 92*24-1 hours.
+     * const result = differenceInDays(
+     *   new Date(2020, 5, 1),
+     *   new Date(2020, 2, 1)
+     * )
+    //=> 92
+     */
+    function differenceInDays(dirtyDateLeft, dirtyDateRight) {
+      requiredArgs(2, arguments);
+      var dateLeft = toDate(dirtyDateLeft);
+      var dateRight = toDate(dirtyDateRight);
+      var sign = compareLocalAsc(dateLeft, dateRight);
+      var difference = Math.abs(differenceInCalendarDays(dateLeft, dateRight));
+      dateLeft.setDate(dateLeft.getDate() - sign * difference);
+
+      // Math.abs(diff in full days - diff in calendar days) === 1 if last calendar day is not full
+      // If so, result must be decreased by 1 in absolute value
+      var isLastDayNotFull = Number(compareLocalAsc(dateLeft, dateRight) === -sign);
+      var result = sign * (difference - isLastDayNotFull);
+      // Prevent negative zero
+      return result === 0 ? 0 : result;
+    }
+
+    /**
+     * @name subMilliseconds
+     * @category Millisecond Helpers
+     * @summary Subtract the specified number of milliseconds from the given date.
+     *
+     * @description
+     * Subtract the specified number of milliseconds from the given date.
+     *
+     * @param {Date|Number} date - the date to be changed
+     * @param {Number} amount - the amount of milliseconds to be subtracted. Positive decimals will be rounded using `Math.floor`, decimals less than zero will be rounded using `Math.ceil`.
+     * @returns {Date} the new date with the milliseconds subtracted
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // Subtract 750 milliseconds from 10 July 2014 12:45:30.000:
+     * const result = subMilliseconds(new Date(2014, 6, 10, 12, 45, 30, 0), 750)
+     * //=> Thu Jul 10 2014 12:45:29.250
+     */
+    function subMilliseconds(dirtyDate, dirtyAmount) {
+      requiredArgs(2, arguments);
+      var amount = toInteger(dirtyAmount);
+      return addMilliseconds(dirtyDate, -amount);
+    }
+
+    var MILLISECONDS_IN_DAY = 86400000;
+    function getUTCDayOfYear(dirtyDate) {
+      requiredArgs(1, arguments);
+      var date = toDate(dirtyDate);
+      var timestamp = date.getTime();
+      date.setUTCMonth(0, 1);
+      date.setUTCHours(0, 0, 0, 0);
+      var startOfYearTimestamp = date.getTime();
+      var difference = timestamp - startOfYearTimestamp;
+      return Math.floor(difference / MILLISECONDS_IN_DAY) + 1;
+    }
+
+    function startOfUTCISOWeek(dirtyDate) {
+      requiredArgs(1, arguments);
+      var weekStartsOn = 1;
+      var date = toDate(dirtyDate);
+      var day = date.getUTCDay();
+      var diff = (day < weekStartsOn ? 7 : 0) + day - weekStartsOn;
+      date.setUTCDate(date.getUTCDate() - diff);
+      date.setUTCHours(0, 0, 0, 0);
+      return date;
+    }
+
+    function getUTCISOWeekYear(dirtyDate) {
+      requiredArgs(1, arguments);
+      var date = toDate(dirtyDate);
+      var year = date.getUTCFullYear();
+      var fourthOfJanuaryOfNextYear = new Date(0);
+      fourthOfJanuaryOfNextYear.setUTCFullYear(year + 1, 0, 4);
+      fourthOfJanuaryOfNextYear.setUTCHours(0, 0, 0, 0);
+      var startOfNextYear = startOfUTCISOWeek(fourthOfJanuaryOfNextYear);
+      var fourthOfJanuaryOfThisYear = new Date(0);
+      fourthOfJanuaryOfThisYear.setUTCFullYear(year, 0, 4);
+      fourthOfJanuaryOfThisYear.setUTCHours(0, 0, 0, 0);
+      var startOfThisYear = startOfUTCISOWeek(fourthOfJanuaryOfThisYear);
+      if (date.getTime() >= startOfNextYear.getTime()) {
+        return year + 1;
+      } else if (date.getTime() >= startOfThisYear.getTime()) {
+        return year;
+      } else {
+        return year - 1;
+      }
+    }
+
+    function startOfUTCISOWeekYear(dirtyDate) {
+      requiredArgs(1, arguments);
+      var year = getUTCISOWeekYear(dirtyDate);
+      var fourthOfJanuary = new Date(0);
+      fourthOfJanuary.setUTCFullYear(year, 0, 4);
+      fourthOfJanuary.setUTCHours(0, 0, 0, 0);
+      var date = startOfUTCISOWeek(fourthOfJanuary);
+      return date;
+    }
+
+    var MILLISECONDS_IN_WEEK$1 = 604800000;
+    function getUTCISOWeek(dirtyDate) {
+      requiredArgs(1, arguments);
+      var date = toDate(dirtyDate);
+      var diff = startOfUTCISOWeek(date).getTime() - startOfUTCISOWeekYear(date).getTime();
+
+      // Round the number of days to the nearest integer
+      // because the number of milliseconds in a week is not constant
+      // (e.g. it's different in the week of the daylight saving time clock shift)
+      return Math.round(diff / MILLISECONDS_IN_WEEK$1) + 1;
+    }
+
+    function startOfUTCWeek(dirtyDate, options) {
+      var _ref, _ref2, _ref3, _options$weekStartsOn, _options$locale, _options$locale$optio, _defaultOptions$local, _defaultOptions$local2;
+      requiredArgs(1, arguments);
+      var defaultOptions = getDefaultOptions();
+      var weekStartsOn = toInteger((_ref = (_ref2 = (_ref3 = (_options$weekStartsOn = options === null || options === void 0 ? void 0 : options.weekStartsOn) !== null && _options$weekStartsOn !== void 0 ? _options$weekStartsOn : options === null || options === void 0 ? void 0 : (_options$locale = options.locale) === null || _options$locale === void 0 ? void 0 : (_options$locale$optio = _options$locale.options) === null || _options$locale$optio === void 0 ? void 0 : _options$locale$optio.weekStartsOn) !== null && _ref3 !== void 0 ? _ref3 : defaultOptions.weekStartsOn) !== null && _ref2 !== void 0 ? _ref2 : (_defaultOptions$local = defaultOptions.locale) === null || _defaultOptions$local === void 0 ? void 0 : (_defaultOptions$local2 = _defaultOptions$local.options) === null || _defaultOptions$local2 === void 0 ? void 0 : _defaultOptions$local2.weekStartsOn) !== null && _ref !== void 0 ? _ref : 0);
+
+      // Test if weekStartsOn is between 0 and 6 _and_ is not NaN
+      if (!(weekStartsOn >= 0 && weekStartsOn <= 6)) {
+        throw new RangeError('weekStartsOn must be between 0 and 6 inclusively');
+      }
+      var date = toDate(dirtyDate);
+      var day = date.getUTCDay();
+      var diff = (day < weekStartsOn ? 7 : 0) + day - weekStartsOn;
+      date.setUTCDate(date.getUTCDate() - diff);
+      date.setUTCHours(0, 0, 0, 0);
+      return date;
+    }
+
+    function getUTCWeekYear(dirtyDate, options) {
+      var _ref, _ref2, _ref3, _options$firstWeekCon, _options$locale, _options$locale$optio, _defaultOptions$local, _defaultOptions$local2;
+      requiredArgs(1, arguments);
+      var date = toDate(dirtyDate);
+      var year = date.getUTCFullYear();
+      var defaultOptions = getDefaultOptions();
+      var firstWeekContainsDate = toInteger((_ref = (_ref2 = (_ref3 = (_options$firstWeekCon = options === null || options === void 0 ? void 0 : options.firstWeekContainsDate) !== null && _options$firstWeekCon !== void 0 ? _options$firstWeekCon : options === null || options === void 0 ? void 0 : (_options$locale = options.locale) === null || _options$locale === void 0 ? void 0 : (_options$locale$optio = _options$locale.options) === null || _options$locale$optio === void 0 ? void 0 : _options$locale$optio.firstWeekContainsDate) !== null && _ref3 !== void 0 ? _ref3 : defaultOptions.firstWeekContainsDate) !== null && _ref2 !== void 0 ? _ref2 : (_defaultOptions$local = defaultOptions.locale) === null || _defaultOptions$local === void 0 ? void 0 : (_defaultOptions$local2 = _defaultOptions$local.options) === null || _defaultOptions$local2 === void 0 ? void 0 : _defaultOptions$local2.firstWeekContainsDate) !== null && _ref !== void 0 ? _ref : 1);
+
+      // Test if weekStartsOn is between 1 and 7 _and_ is not NaN
+      if (!(firstWeekContainsDate >= 1 && firstWeekContainsDate <= 7)) {
+        throw new RangeError('firstWeekContainsDate must be between 1 and 7 inclusively');
+      }
+      var firstWeekOfNextYear = new Date(0);
+      firstWeekOfNextYear.setUTCFullYear(year + 1, 0, firstWeekContainsDate);
+      firstWeekOfNextYear.setUTCHours(0, 0, 0, 0);
+      var startOfNextYear = startOfUTCWeek(firstWeekOfNextYear, options);
+      var firstWeekOfThisYear = new Date(0);
+      firstWeekOfThisYear.setUTCFullYear(year, 0, firstWeekContainsDate);
+      firstWeekOfThisYear.setUTCHours(0, 0, 0, 0);
+      var startOfThisYear = startOfUTCWeek(firstWeekOfThisYear, options);
+      if (date.getTime() >= startOfNextYear.getTime()) {
+        return year + 1;
+      } else if (date.getTime() >= startOfThisYear.getTime()) {
+        return year;
+      } else {
+        return year - 1;
+      }
+    }
+
+    function startOfUTCWeekYear(dirtyDate, options) {
+      var _ref, _ref2, _ref3, _options$firstWeekCon, _options$locale, _options$locale$optio, _defaultOptions$local, _defaultOptions$local2;
+      requiredArgs(1, arguments);
+      var defaultOptions = getDefaultOptions();
+      var firstWeekContainsDate = toInteger((_ref = (_ref2 = (_ref3 = (_options$firstWeekCon = options === null || options === void 0 ? void 0 : options.firstWeekContainsDate) !== null && _options$firstWeekCon !== void 0 ? _options$firstWeekCon : options === null || options === void 0 ? void 0 : (_options$locale = options.locale) === null || _options$locale === void 0 ? void 0 : (_options$locale$optio = _options$locale.options) === null || _options$locale$optio === void 0 ? void 0 : _options$locale$optio.firstWeekContainsDate) !== null && _ref3 !== void 0 ? _ref3 : defaultOptions.firstWeekContainsDate) !== null && _ref2 !== void 0 ? _ref2 : (_defaultOptions$local = defaultOptions.locale) === null || _defaultOptions$local === void 0 ? void 0 : (_defaultOptions$local2 = _defaultOptions$local.options) === null || _defaultOptions$local2 === void 0 ? void 0 : _defaultOptions$local2.firstWeekContainsDate) !== null && _ref !== void 0 ? _ref : 1);
+      var year = getUTCWeekYear(dirtyDate, options);
+      var firstWeek = new Date(0);
+      firstWeek.setUTCFullYear(year, 0, firstWeekContainsDate);
+      firstWeek.setUTCHours(0, 0, 0, 0);
+      var date = startOfUTCWeek(firstWeek, options);
+      return date;
+    }
+
+    var MILLISECONDS_IN_WEEK = 604800000;
+    function getUTCWeek(dirtyDate, options) {
+      requiredArgs(1, arguments);
+      var date = toDate(dirtyDate);
+      var diff = startOfUTCWeek(date, options).getTime() - startOfUTCWeekYear(date, options).getTime();
+
+      // Round the number of days to the nearest integer
+      // because the number of milliseconds in a week is not constant
+      // (e.g. it's different in the week of the daylight saving time clock shift)
+      return Math.round(diff / MILLISECONDS_IN_WEEK) + 1;
+    }
+
+    function addLeadingZeros(number, targetLength) {
+      var sign = number < 0 ? '-' : '';
+      var output = Math.abs(number).toString();
+      while (output.length < targetLength) {
+        output = '0' + output;
+      }
+      return sign + output;
+    }
+
+    /*
+     * |     | Unit                           |     | Unit                           |
+     * |-----|--------------------------------|-----|--------------------------------|
+     * |  a  | AM, PM                         |  A* |                                |
+     * |  d  | Day of month                   |  D  |                                |
+     * |  h  | Hour [1-12]                    |  H  | Hour [0-23]                    |
+     * |  m  | Minute                         |  M  | Month                          |
+     * |  s  | Second                         |  S  | Fraction of second             |
+     * |  y  | Year (abs)                     |  Y  |                                |
+     *
+     * Letters marked by * are not implemented but reserved by Unicode standard.
+     */
+    var formatters$3 = {
+      // Year
+      y: function y(date, token) {
+        // From http://www.unicode.org/reports/tr35/tr35-31/tr35-dates.html#Date_Format_tokens
+        // | Year     |     y | yy |   yyy |  yyyy | yyyyy |
+        // |----------|-------|----|-------|-------|-------|
+        // | AD 1     |     1 | 01 |   001 |  0001 | 00001 |
+        // | AD 12    |    12 | 12 |   012 |  0012 | 00012 |
+        // | AD 123   |   123 | 23 |   123 |  0123 | 00123 |
+        // | AD 1234  |  1234 | 34 |  1234 |  1234 | 01234 |
+        // | AD 12345 | 12345 | 45 | 12345 | 12345 | 12345 |
+
+        var signedYear = date.getUTCFullYear();
+        // Returns 1 for 1 BC (which is year 0 in JavaScript)
+        var year = signedYear > 0 ? signedYear : 1 - signedYear;
+        return addLeadingZeros(token === 'yy' ? year % 100 : year, token.length);
+      },
+      // Month
+      M: function M(date, token) {
+        var month = date.getUTCMonth();
+        return token === 'M' ? String(month + 1) : addLeadingZeros(month + 1, 2);
+      },
+      // Day of the month
+      d: function d(date, token) {
+        return addLeadingZeros(date.getUTCDate(), token.length);
+      },
+      // AM or PM
+      a: function a(date, token) {
+        var dayPeriodEnumValue = date.getUTCHours() / 12 >= 1 ? 'pm' : 'am';
+        switch (token) {
+          case 'a':
+          case 'aa':
+            return dayPeriodEnumValue.toUpperCase();
+          case 'aaa':
+            return dayPeriodEnumValue;
+          case 'aaaaa':
+            return dayPeriodEnumValue[0];
+          case 'aaaa':
+          default:
+            return dayPeriodEnumValue === 'am' ? 'a.m.' : 'p.m.';
+        }
+      },
+      // Hour [1-12]
+      h: function h(date, token) {
+        return addLeadingZeros(date.getUTCHours() % 12 || 12, token.length);
+      },
+      // Hour [0-23]
+      H: function H(date, token) {
+        return addLeadingZeros(date.getUTCHours(), token.length);
+      },
+      // Minute
+      m: function m(date, token) {
+        return addLeadingZeros(date.getUTCMinutes(), token.length);
+      },
+      // Second
+      s: function s(date, token) {
+        return addLeadingZeros(date.getUTCSeconds(), token.length);
+      },
+      // Fraction of second
+      S: function S(date, token) {
+        var numberOfDigits = token.length;
+        var milliseconds = date.getUTCMilliseconds();
+        var fractionalSeconds = Math.floor(milliseconds * Math.pow(10, numberOfDigits - 3));
+        return addLeadingZeros(fractionalSeconds, token.length);
+      }
+    };
+    var formatters$4 = formatters$3;
+
+    var dayPeriodEnum = {
+      am: 'am',
+      pm: 'pm',
+      midnight: 'midnight',
+      noon: 'noon',
+      morning: 'morning',
+      afternoon: 'afternoon',
+      evening: 'evening',
+      night: 'night'
+    };
+    /*
+     * |     | Unit                           |     | Unit                           |
+     * |-----|--------------------------------|-----|--------------------------------|
+     * |  a  | AM, PM                         |  A* | Milliseconds in day            |
+     * |  b  | AM, PM, noon, midnight         |  B  | Flexible day period            |
+     * |  c  | Stand-alone local day of week  |  C* | Localized hour w/ day period   |
+     * |  d  | Day of month                   |  D  | Day of year                    |
+     * |  e  | Local day of week              |  E  | Day of week                    |
+     * |  f  |                                |  F* | Day of week in month           |
+     * |  g* | Modified Julian day            |  G  | Era                            |
+     * |  h  | Hour [1-12]                    |  H  | Hour [0-23]                    |
+     * |  i! | ISO day of week                |  I! | ISO week of year               |
+     * |  j* | Localized hour w/ day period   |  J* | Localized hour w/o day period  |
+     * |  k  | Hour [1-24]                    |  K  | Hour [0-11]                    |
+     * |  l* | (deprecated)                   |  L  | Stand-alone month              |
+     * |  m  | Minute                         |  M  | Month                          |
+     * |  n  |                                |  N  |                                |
+     * |  o! | Ordinal number modifier        |  O  | Timezone (GMT)                 |
+     * |  p! | Long localized time            |  P! | Long localized date            |
+     * |  q  | Stand-alone quarter            |  Q  | Quarter                        |
+     * |  r* | Related Gregorian year         |  R! | ISO week-numbering year        |
+     * |  s  | Second                         |  S  | Fraction of second             |
+     * |  t! | Seconds timestamp              |  T! | Milliseconds timestamp         |
+     * |  u  | Extended year                  |  U* | Cyclic year                    |
+     * |  v* | Timezone (generic non-locat.)  |  V* | Timezone (location)            |
+     * |  w  | Local week of year             |  W* | Week of month                  |
+     * |  x  | Timezone (ISO-8601 w/o Z)      |  X  | Timezone (ISO-8601)            |
+     * |  y  | Year (abs)                     |  Y  | Local week-numbering year      |
+     * |  z  | Timezone (specific non-locat.) |  Z* | Timezone (aliases)             |
+     *
+     * Letters marked by * are not implemented but reserved by Unicode standard.
+     *
+     * Letters marked by ! are non-standard, but implemented by date-fns:
+     * - `o` modifies the previous token to turn it into an ordinal (see `format` docs)
+     * - `i` is ISO day of week. For `i` and `ii` is returns numeric ISO week days,
+     *   i.e. 7 for Sunday, 1 for Monday, etc.
+     * - `I` is ISO week of year, as opposed to `w` which is local week of year.
+     * - `R` is ISO week-numbering year, as opposed to `Y` which is local week-numbering year.
+     *   `R` is supposed to be used in conjunction with `I` and `i`
+     *   for universal ISO week-numbering date, whereas
+     *   `Y` is supposed to be used in conjunction with `w` and `e`
+     *   for week-numbering date specific to the locale.
+     * - `P` is long localized date format
+     * - `p` is long localized time format
+     */
+
+    var formatters$1 = {
+      // Era
+      G: function G(date, token, localize) {
+        var era = date.getUTCFullYear() > 0 ? 1 : 0;
+        switch (token) {
+          // AD, BC
+          case 'G':
+          case 'GG':
+          case 'GGG':
+            return localize.era(era, {
+              width: 'abbreviated'
+            });
+          // A, B
+          case 'GGGGG':
+            return localize.era(era, {
+              width: 'narrow'
+            });
+          // Anno Domini, Before Christ
+          case 'GGGG':
+          default:
+            return localize.era(era, {
+              width: 'wide'
+            });
+        }
+      },
+      // Year
+      y: function y(date, token, localize) {
+        // Ordinal number
+        if (token === 'yo') {
+          var signedYear = date.getUTCFullYear();
+          // Returns 1 for 1 BC (which is year 0 in JavaScript)
+          var year = signedYear > 0 ? signedYear : 1 - signedYear;
+          return localize.ordinalNumber(year, {
+            unit: 'year'
+          });
+        }
+        return formatters$4.y(date, token);
+      },
+      // Local week-numbering year
+      Y: function Y(date, token, localize, options) {
+        var signedWeekYear = getUTCWeekYear(date, options);
+        // Returns 1 for 1 BC (which is year 0 in JavaScript)
+        var weekYear = signedWeekYear > 0 ? signedWeekYear : 1 - signedWeekYear;
+
+        // Two digit year
+        if (token === 'YY') {
+          var twoDigitYear = weekYear % 100;
+          return addLeadingZeros(twoDigitYear, 2);
+        }
+
+        // Ordinal number
+        if (token === 'Yo') {
+          return localize.ordinalNumber(weekYear, {
+            unit: 'year'
+          });
+        }
+
+        // Padding
+        return addLeadingZeros(weekYear, token.length);
+      },
+      // ISO week-numbering year
+      R: function R(date, token) {
+        var isoWeekYear = getUTCISOWeekYear(date);
+
+        // Padding
+        return addLeadingZeros(isoWeekYear, token.length);
+      },
+      // Extended year. This is a single number designating the year of this calendar system.
+      // The main difference between `y` and `u` localizers are B.C. years:
+      // | Year | `y` | `u` |
+      // |------|-----|-----|
+      // | AC 1 |   1 |   1 |
+      // | BC 1 |   1 |   0 |
+      // | BC 2 |   2 |  -1 |
+      // Also `yy` always returns the last two digits of a year,
+      // while `uu` pads single digit years to 2 characters and returns other years unchanged.
+      u: function u(date, token) {
+        var year = date.getUTCFullYear();
+        return addLeadingZeros(year, token.length);
+      },
+      // Quarter
+      Q: function Q(date, token, localize) {
+        var quarter = Math.ceil((date.getUTCMonth() + 1) / 3);
+        switch (token) {
+          // 1, 2, 3, 4
+          case 'Q':
+            return String(quarter);
+          // 01, 02, 03, 04
+          case 'QQ':
+            return addLeadingZeros(quarter, 2);
+          // 1st, 2nd, 3rd, 4th
+          case 'Qo':
+            return localize.ordinalNumber(quarter, {
+              unit: 'quarter'
+            });
+          // Q1, Q2, Q3, Q4
+          case 'QQQ':
+            return localize.quarter(quarter, {
+              width: 'abbreviated',
+              context: 'formatting'
+            });
+          // 1, 2, 3, 4 (narrow quarter; could be not numerical)
+          case 'QQQQQ':
+            return localize.quarter(quarter, {
+              width: 'narrow',
+              context: 'formatting'
+            });
+          // 1st quarter, 2nd quarter, ...
+          case 'QQQQ':
+          default:
+            return localize.quarter(quarter, {
+              width: 'wide',
+              context: 'formatting'
+            });
+        }
+      },
+      // Stand-alone quarter
+      q: function q(date, token, localize) {
+        var quarter = Math.ceil((date.getUTCMonth() + 1) / 3);
+        switch (token) {
+          // 1, 2, 3, 4
+          case 'q':
+            return String(quarter);
+          // 01, 02, 03, 04
+          case 'qq':
+            return addLeadingZeros(quarter, 2);
+          // 1st, 2nd, 3rd, 4th
+          case 'qo':
+            return localize.ordinalNumber(quarter, {
+              unit: 'quarter'
+            });
+          // Q1, Q2, Q3, Q4
+          case 'qqq':
+            return localize.quarter(quarter, {
+              width: 'abbreviated',
+              context: 'standalone'
+            });
+          // 1, 2, 3, 4 (narrow quarter; could be not numerical)
+          case 'qqqqq':
+            return localize.quarter(quarter, {
+              width: 'narrow',
+              context: 'standalone'
+            });
+          // 1st quarter, 2nd quarter, ...
+          case 'qqqq':
+          default:
+            return localize.quarter(quarter, {
+              width: 'wide',
+              context: 'standalone'
+            });
+        }
+      },
+      // Month
+      M: function M(date, token, localize) {
+        var month = date.getUTCMonth();
+        switch (token) {
+          case 'M':
+          case 'MM':
+            return formatters$4.M(date, token);
+          // 1st, 2nd, ..., 12th
+          case 'Mo':
+            return localize.ordinalNumber(month + 1, {
+              unit: 'month'
+            });
+          // Jan, Feb, ..., Dec
+          case 'MMM':
+            return localize.month(month, {
+              width: 'abbreviated',
+              context: 'formatting'
+            });
+          // J, F, ..., D
+          case 'MMMMM':
+            return localize.month(month, {
+              width: 'narrow',
+              context: 'formatting'
+            });
+          // January, February, ..., December
+          case 'MMMM':
+          default:
+            return localize.month(month, {
+              width: 'wide',
+              context: 'formatting'
+            });
+        }
+      },
+      // Stand-alone month
+      L: function L(date, token, localize) {
+        var month = date.getUTCMonth();
+        switch (token) {
+          // 1, 2, ..., 12
+          case 'L':
+            return String(month + 1);
+          // 01, 02, ..., 12
+          case 'LL':
+            return addLeadingZeros(month + 1, 2);
+          // 1st, 2nd, ..., 12th
+          case 'Lo':
+            return localize.ordinalNumber(month + 1, {
+              unit: 'month'
+            });
+          // Jan, Feb, ..., Dec
+          case 'LLL':
+            return localize.month(month, {
+              width: 'abbreviated',
+              context: 'standalone'
+            });
+          // J, F, ..., D
+          case 'LLLLL':
+            return localize.month(month, {
+              width: 'narrow',
+              context: 'standalone'
+            });
+          // January, February, ..., December
+          case 'LLLL':
+          default:
+            return localize.month(month, {
+              width: 'wide',
+              context: 'standalone'
+            });
+        }
+      },
+      // Local week of year
+      w: function w(date, token, localize, options) {
+        var week = getUTCWeek(date, options);
+        if (token === 'wo') {
+          return localize.ordinalNumber(week, {
+            unit: 'week'
+          });
+        }
+        return addLeadingZeros(week, token.length);
+      },
+      // ISO week of year
+      I: function I(date, token, localize) {
+        var isoWeek = getUTCISOWeek(date);
+        if (token === 'Io') {
+          return localize.ordinalNumber(isoWeek, {
+            unit: 'week'
+          });
+        }
+        return addLeadingZeros(isoWeek, token.length);
+      },
+      // Day of the month
+      d: function d(date, token, localize) {
+        if (token === 'do') {
+          return localize.ordinalNumber(date.getUTCDate(), {
+            unit: 'date'
+          });
+        }
+        return formatters$4.d(date, token);
+      },
+      // Day of year
+      D: function D(date, token, localize) {
+        var dayOfYear = getUTCDayOfYear(date);
+        if (token === 'Do') {
+          return localize.ordinalNumber(dayOfYear, {
+            unit: 'dayOfYear'
+          });
+        }
+        return addLeadingZeros(dayOfYear, token.length);
+      },
+      // Day of week
+      E: function E(date, token, localize) {
+        var dayOfWeek = date.getUTCDay();
+        switch (token) {
+          // Tue
+          case 'E':
+          case 'EE':
+          case 'EEE':
+            return localize.day(dayOfWeek, {
+              width: 'abbreviated',
+              context: 'formatting'
+            });
+          // T
+          case 'EEEEE':
+            return localize.day(dayOfWeek, {
+              width: 'narrow',
+              context: 'formatting'
+            });
+          // Tu
+          case 'EEEEEE':
+            return localize.day(dayOfWeek, {
+              width: 'short',
+              context: 'formatting'
+            });
+          // Tuesday
+          case 'EEEE':
+          default:
+            return localize.day(dayOfWeek, {
+              width: 'wide',
+              context: 'formatting'
+            });
+        }
+      },
+      // Local day of week
+      e: function e(date, token, localize, options) {
+        var dayOfWeek = date.getUTCDay();
+        var localDayOfWeek = (dayOfWeek - options.weekStartsOn + 8) % 7 || 7;
+        switch (token) {
+          // Numerical value (Nth day of week with current locale or weekStartsOn)
+          case 'e':
+            return String(localDayOfWeek);
+          // Padded numerical value
+          case 'ee':
+            return addLeadingZeros(localDayOfWeek, 2);
+          // 1st, 2nd, ..., 7th
+          case 'eo':
+            return localize.ordinalNumber(localDayOfWeek, {
+              unit: 'day'
+            });
+          case 'eee':
+            return localize.day(dayOfWeek, {
+              width: 'abbreviated',
+              context: 'formatting'
+            });
+          // T
+          case 'eeeee':
+            return localize.day(dayOfWeek, {
+              width: 'narrow',
+              context: 'formatting'
+            });
+          // Tu
+          case 'eeeeee':
+            return localize.day(dayOfWeek, {
+              width: 'short',
+              context: 'formatting'
+            });
+          // Tuesday
+          case 'eeee':
+          default:
+            return localize.day(dayOfWeek, {
+              width: 'wide',
+              context: 'formatting'
+            });
+        }
+      },
+      // Stand-alone local day of week
+      c: function c(date, token, localize, options) {
+        var dayOfWeek = date.getUTCDay();
+        var localDayOfWeek = (dayOfWeek - options.weekStartsOn + 8) % 7 || 7;
+        switch (token) {
+          // Numerical value (same as in `e`)
+          case 'c':
+            return String(localDayOfWeek);
+          // Padded numerical value
+          case 'cc':
+            return addLeadingZeros(localDayOfWeek, token.length);
+          // 1st, 2nd, ..., 7th
+          case 'co':
+            return localize.ordinalNumber(localDayOfWeek, {
+              unit: 'day'
+            });
+          case 'ccc':
+            return localize.day(dayOfWeek, {
+              width: 'abbreviated',
+              context: 'standalone'
+            });
+          // T
+          case 'ccccc':
+            return localize.day(dayOfWeek, {
+              width: 'narrow',
+              context: 'standalone'
+            });
+          // Tu
+          case 'cccccc':
+            return localize.day(dayOfWeek, {
+              width: 'short',
+              context: 'standalone'
+            });
+          // Tuesday
+          case 'cccc':
+          default:
+            return localize.day(dayOfWeek, {
+              width: 'wide',
+              context: 'standalone'
+            });
+        }
+      },
+      // ISO day of week
+      i: function i(date, token, localize) {
+        var dayOfWeek = date.getUTCDay();
+        var isoDayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
+        switch (token) {
+          // 2
+          case 'i':
+            return String(isoDayOfWeek);
+          // 02
+          case 'ii':
+            return addLeadingZeros(isoDayOfWeek, token.length);
+          // 2nd
+          case 'io':
+            return localize.ordinalNumber(isoDayOfWeek, {
+              unit: 'day'
+            });
+          // Tue
+          case 'iii':
+            return localize.day(dayOfWeek, {
+              width: 'abbreviated',
+              context: 'formatting'
+            });
+          // T
+          case 'iiiii':
+            return localize.day(dayOfWeek, {
+              width: 'narrow',
+              context: 'formatting'
+            });
+          // Tu
+          case 'iiiiii':
+            return localize.day(dayOfWeek, {
+              width: 'short',
+              context: 'formatting'
+            });
+          // Tuesday
+          case 'iiii':
+          default:
+            return localize.day(dayOfWeek, {
+              width: 'wide',
+              context: 'formatting'
+            });
+        }
+      },
+      // AM or PM
+      a: function a(date, token, localize) {
+        var hours = date.getUTCHours();
+        var dayPeriodEnumValue = hours / 12 >= 1 ? 'pm' : 'am';
+        switch (token) {
+          case 'a':
+          case 'aa':
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'abbreviated',
+              context: 'formatting'
+            });
+          case 'aaa':
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'abbreviated',
+              context: 'formatting'
+            }).toLowerCase();
+          case 'aaaaa':
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'narrow',
+              context: 'formatting'
+            });
+          case 'aaaa':
+          default:
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'wide',
+              context: 'formatting'
+            });
+        }
+      },
+      // AM, PM, midnight, noon
+      b: function b(date, token, localize) {
+        var hours = date.getUTCHours();
+        var dayPeriodEnumValue;
+        if (hours === 12) {
+          dayPeriodEnumValue = dayPeriodEnum.noon;
+        } else if (hours === 0) {
+          dayPeriodEnumValue = dayPeriodEnum.midnight;
+        } else {
+          dayPeriodEnumValue = hours / 12 >= 1 ? 'pm' : 'am';
+        }
+        switch (token) {
+          case 'b':
+          case 'bb':
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'abbreviated',
+              context: 'formatting'
+            });
+          case 'bbb':
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'abbreviated',
+              context: 'formatting'
+            }).toLowerCase();
+          case 'bbbbb':
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'narrow',
+              context: 'formatting'
+            });
+          case 'bbbb':
+          default:
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'wide',
+              context: 'formatting'
+            });
+        }
+      },
+      // in the morning, in the afternoon, in the evening, at night
+      B: function B(date, token, localize) {
+        var hours = date.getUTCHours();
+        var dayPeriodEnumValue;
+        if (hours >= 17) {
+          dayPeriodEnumValue = dayPeriodEnum.evening;
+        } else if (hours >= 12) {
+          dayPeriodEnumValue = dayPeriodEnum.afternoon;
+        } else if (hours >= 4) {
+          dayPeriodEnumValue = dayPeriodEnum.morning;
+        } else {
+          dayPeriodEnumValue = dayPeriodEnum.night;
+        }
+        switch (token) {
+          case 'B':
+          case 'BB':
+          case 'BBB':
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'abbreviated',
+              context: 'formatting'
+            });
+          case 'BBBBB':
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'narrow',
+              context: 'formatting'
+            });
+          case 'BBBB':
+          default:
+            return localize.dayPeriod(dayPeriodEnumValue, {
+              width: 'wide',
+              context: 'formatting'
+            });
+        }
+      },
+      // Hour [1-12]
+      h: function h(date, token, localize) {
+        if (token === 'ho') {
+          var hours = date.getUTCHours() % 12;
+          if (hours === 0) hours = 12;
+          return localize.ordinalNumber(hours, {
+            unit: 'hour'
+          });
+        }
+        return formatters$4.h(date, token);
+      },
+      // Hour [0-23]
+      H: function H(date, token, localize) {
+        if (token === 'Ho') {
+          return localize.ordinalNumber(date.getUTCHours(), {
+            unit: 'hour'
+          });
+        }
+        return formatters$4.H(date, token);
+      },
+      // Hour [0-11]
+      K: function K(date, token, localize) {
+        var hours = date.getUTCHours() % 12;
+        if (token === 'Ko') {
+          return localize.ordinalNumber(hours, {
+            unit: 'hour'
+          });
+        }
+        return addLeadingZeros(hours, token.length);
+      },
+      // Hour [1-24]
+      k: function k(date, token, localize) {
+        var hours = date.getUTCHours();
+        if (hours === 0) hours = 24;
+        if (token === 'ko') {
+          return localize.ordinalNumber(hours, {
+            unit: 'hour'
+          });
+        }
+        return addLeadingZeros(hours, token.length);
+      },
+      // Minute
+      m: function m(date, token, localize) {
+        if (token === 'mo') {
+          return localize.ordinalNumber(date.getUTCMinutes(), {
+            unit: 'minute'
+          });
+        }
+        return formatters$4.m(date, token);
+      },
+      // Second
+      s: function s(date, token, localize) {
+        if (token === 'so') {
+          return localize.ordinalNumber(date.getUTCSeconds(), {
+            unit: 'second'
+          });
+        }
+        return formatters$4.s(date, token);
+      },
+      // Fraction of second
+      S: function S(date, token) {
+        return formatters$4.S(date, token);
+      },
+      // Timezone (ISO-8601. If offset is 0, output is always `'Z'`)
+      X: function X(date, token, _localize, options) {
+        var originalDate = options._originalDate || date;
+        var timezoneOffset = originalDate.getTimezoneOffset();
+        if (timezoneOffset === 0) {
+          return 'Z';
+        }
+        switch (token) {
+          // Hours and optional minutes
+          case 'X':
+            return formatTimezoneWithOptionalMinutes(timezoneOffset);
+
+          // Hours, minutes and optional seconds without `:` delimiter
+          // Note: neither ISO-8601 nor JavaScript supports seconds in timezone offsets
+          // so this token always has the same output as `XX`
+          case 'XXXX':
+          case 'XX':
+            // Hours and minutes without `:` delimiter
+            return formatTimezone(timezoneOffset);
+
+          // Hours, minutes and optional seconds with `:` delimiter
+          // Note: neither ISO-8601 nor JavaScript supports seconds in timezone offsets
+          // so this token always has the same output as `XXX`
+          case 'XXXXX':
+          case 'XXX': // Hours and minutes with `:` delimiter
+          default:
+            return formatTimezone(timezoneOffset, ':');
+        }
+      },
+      // Timezone (ISO-8601. If offset is 0, output is `'+00:00'` or equivalent)
+      x: function x(date, token, _localize, options) {
+        var originalDate = options._originalDate || date;
+        var timezoneOffset = originalDate.getTimezoneOffset();
+        switch (token) {
+          // Hours and optional minutes
+          case 'x':
+            return formatTimezoneWithOptionalMinutes(timezoneOffset);
+
+          // Hours, minutes and optional seconds without `:` delimiter
+          // Note: neither ISO-8601 nor JavaScript supports seconds in timezone offsets
+          // so this token always has the same output as `xx`
+          case 'xxxx':
+          case 'xx':
+            // Hours and minutes without `:` delimiter
+            return formatTimezone(timezoneOffset);
+
+          // Hours, minutes and optional seconds with `:` delimiter
+          // Note: neither ISO-8601 nor JavaScript supports seconds in timezone offsets
+          // so this token always has the same output as `xxx`
+          case 'xxxxx':
+          case 'xxx': // Hours and minutes with `:` delimiter
+          default:
+            return formatTimezone(timezoneOffset, ':');
+        }
+      },
+      // Timezone (GMT)
+      O: function O(date, token, _localize, options) {
+        var originalDate = options._originalDate || date;
+        var timezoneOffset = originalDate.getTimezoneOffset();
+        switch (token) {
+          // Short
+          case 'O':
+          case 'OO':
+          case 'OOO':
+            return 'GMT' + formatTimezoneShort(timezoneOffset, ':');
+          // Long
+          case 'OOOO':
+          default:
+            return 'GMT' + formatTimezone(timezoneOffset, ':');
+        }
+      },
+      // Timezone (specific non-location)
+      z: function z(date, token, _localize, options) {
+        var originalDate = options._originalDate || date;
+        var timezoneOffset = originalDate.getTimezoneOffset();
+        switch (token) {
+          // Short
+          case 'z':
+          case 'zz':
+          case 'zzz':
+            return 'GMT' + formatTimezoneShort(timezoneOffset, ':');
+          // Long
+          case 'zzzz':
+          default:
+            return 'GMT' + formatTimezone(timezoneOffset, ':');
+        }
+      },
+      // Seconds timestamp
+      t: function t(date, token, _localize, options) {
+        var originalDate = options._originalDate || date;
+        var timestamp = Math.floor(originalDate.getTime() / 1000);
+        return addLeadingZeros(timestamp, token.length);
+      },
+      // Milliseconds timestamp
+      T: function T(date, token, _localize, options) {
+        var originalDate = options._originalDate || date;
+        var timestamp = originalDate.getTime();
+        return addLeadingZeros(timestamp, token.length);
+      }
+    };
+    function formatTimezoneShort(offset, dirtyDelimiter) {
+      var sign = offset > 0 ? '-' : '+';
+      var absOffset = Math.abs(offset);
+      var hours = Math.floor(absOffset / 60);
+      var minutes = absOffset % 60;
+      if (minutes === 0) {
+        return sign + String(hours);
+      }
+      var delimiter = dirtyDelimiter || '';
+      return sign + String(hours) + delimiter + addLeadingZeros(minutes, 2);
+    }
+    function formatTimezoneWithOptionalMinutes(offset, dirtyDelimiter) {
+      if (offset % 60 === 0) {
+        var sign = offset > 0 ? '-' : '+';
+        return sign + addLeadingZeros(Math.abs(offset) / 60, 2);
+      }
+      return formatTimezone(offset, dirtyDelimiter);
+    }
+    function formatTimezone(offset, dirtyDelimiter) {
+      var delimiter = dirtyDelimiter || '';
+      var sign = offset > 0 ? '-' : '+';
+      var absOffset = Math.abs(offset);
+      var hours = addLeadingZeros(Math.floor(absOffset / 60), 2);
+      var minutes = addLeadingZeros(absOffset % 60, 2);
+      return sign + hours + delimiter + minutes;
+    }
+    var formatters$2 = formatters$1;
+
+    var dateLongFormatter = function dateLongFormatter(pattern, formatLong) {
+      switch (pattern) {
+        case 'P':
+          return formatLong.date({
+            width: 'short'
+          });
+        case 'PP':
+          return formatLong.date({
+            width: 'medium'
+          });
+        case 'PPP':
+          return formatLong.date({
+            width: 'long'
+          });
+        case 'PPPP':
+        default:
+          return formatLong.date({
+            width: 'full'
+          });
+      }
+    };
+    var timeLongFormatter = function timeLongFormatter(pattern, formatLong) {
+      switch (pattern) {
+        case 'p':
+          return formatLong.time({
+            width: 'short'
+          });
+        case 'pp':
+          return formatLong.time({
+            width: 'medium'
+          });
+        case 'ppp':
+          return formatLong.time({
+            width: 'long'
+          });
+        case 'pppp':
+        default:
+          return formatLong.time({
+            width: 'full'
+          });
+      }
+    };
+    var dateTimeLongFormatter = function dateTimeLongFormatter(pattern, formatLong) {
+      var matchResult = pattern.match(/(P+)(p+)?/) || [];
+      var datePattern = matchResult[1];
+      var timePattern = matchResult[2];
+      if (!timePattern) {
+        return dateLongFormatter(pattern, formatLong);
+      }
+      var dateTimeFormat;
+      switch (datePattern) {
+        case 'P':
+          dateTimeFormat = formatLong.dateTime({
+            width: 'short'
+          });
+          break;
+        case 'PP':
+          dateTimeFormat = formatLong.dateTime({
+            width: 'medium'
+          });
+          break;
+        case 'PPP':
+          dateTimeFormat = formatLong.dateTime({
+            width: 'long'
+          });
+          break;
+        case 'PPPP':
+        default:
+          dateTimeFormat = formatLong.dateTime({
+            width: 'full'
+          });
+          break;
+      }
+      return dateTimeFormat.replace('{{date}}', dateLongFormatter(datePattern, formatLong)).replace('{{time}}', timeLongFormatter(timePattern, formatLong));
+    };
+    var longFormatters = {
+      p: timeLongFormatter,
+      P: dateTimeLongFormatter
+    };
+    var longFormatters$1 = longFormatters;
+
+    var protectedDayOfYearTokens = ['D', 'DD'];
+    var protectedWeekYearTokens = ['YY', 'YYYY'];
+    function isProtectedDayOfYearToken(token) {
+      return protectedDayOfYearTokens.indexOf(token) !== -1;
+    }
+    function isProtectedWeekYearToken(token) {
+      return protectedWeekYearTokens.indexOf(token) !== -1;
+    }
+    function throwProtectedError(token, format, input) {
+      if (token === 'YYYY') {
+        throw new RangeError("Use `yyyy` instead of `YYYY` (in `".concat(format, "`) for formatting years to the input `").concat(input, "`; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md"));
+      } else if (token === 'YY') {
+        throw new RangeError("Use `yy` instead of `YY` (in `".concat(format, "`) for formatting years to the input `").concat(input, "`; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md"));
+      } else if (token === 'D') {
+        throw new RangeError("Use `d` instead of `D` (in `".concat(format, "`) for formatting days of the month to the input `").concat(input, "`; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md"));
+      } else if (token === 'DD') {
+        throw new RangeError("Use `dd` instead of `DD` (in `".concat(format, "`) for formatting days of the month to the input `").concat(input, "`; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md"));
+      }
+    }
+
+    var formatDistanceLocale = {
+      lessThanXSeconds: {
+        one: 'less than a second',
+        other: 'less than {{count}} seconds'
+      },
+      xSeconds: {
+        one: '1 second',
+        other: '{{count}} seconds'
+      },
+      halfAMinute: 'half a minute',
+      lessThanXMinutes: {
+        one: 'less than a minute',
+        other: 'less than {{count}} minutes'
+      },
+      xMinutes: {
+        one: '1 minute',
+        other: '{{count}} minutes'
+      },
+      aboutXHours: {
+        one: 'about 1 hour',
+        other: 'about {{count}} hours'
+      },
+      xHours: {
+        one: '1 hour',
+        other: '{{count}} hours'
+      },
+      xDays: {
+        one: '1 day',
+        other: '{{count}} days'
+      },
+      aboutXWeeks: {
+        one: 'about 1 week',
+        other: 'about {{count}} weeks'
+      },
+      xWeeks: {
+        one: '1 week',
+        other: '{{count}} weeks'
+      },
+      aboutXMonths: {
+        one: 'about 1 month',
+        other: 'about {{count}} months'
+      },
+      xMonths: {
+        one: '1 month',
+        other: '{{count}} months'
+      },
+      aboutXYears: {
+        one: 'about 1 year',
+        other: 'about {{count}} years'
+      },
+      xYears: {
+        one: '1 year',
+        other: '{{count}} years'
+      },
+      overXYears: {
+        one: 'over 1 year',
+        other: 'over {{count}} years'
+      },
+      almostXYears: {
+        one: 'almost 1 year',
+        other: 'almost {{count}} years'
+      }
+    };
+    var formatDistance = function formatDistance(token, count, options) {
+      var result;
+      var tokenValue = formatDistanceLocale[token];
+      if (typeof tokenValue === 'string') {
+        result = tokenValue;
+      } else if (count === 1) {
+        result = tokenValue.one;
+      } else {
+        result = tokenValue.other.replace('{{count}}', count.toString());
+      }
+      if (options !== null && options !== void 0 && options.addSuffix) {
+        if (options.comparison && options.comparison > 0) {
+          return 'in ' + result;
+        } else {
+          return result + ' ago';
+        }
+      }
+      return result;
+    };
+    var formatDistance$1 = formatDistance;
+
+    function buildFormatLongFn(args) {
+      return function () {
+        var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+        // TODO: Remove String()
+        var width = options.width ? String(options.width) : args.defaultWidth;
+        var format = args.formats[width] || args.formats[args.defaultWidth];
+        return format;
+      };
+    }
+
+    var dateFormats = {
+      full: 'EEEE, MMMM do, y',
+      long: 'MMMM do, y',
+      medium: 'MMM d, y',
+      short: 'MM/dd/yyyy'
+    };
+    var timeFormats = {
+      full: 'h:mm:ss a zzzz',
+      long: 'h:mm:ss a z',
+      medium: 'h:mm:ss a',
+      short: 'h:mm a'
+    };
+    var dateTimeFormats = {
+      full: "{{date}} 'at' {{time}}",
+      long: "{{date}} 'at' {{time}}",
+      medium: '{{date}}, {{time}}',
+      short: '{{date}}, {{time}}'
+    };
+    var formatLong = {
+      date: buildFormatLongFn({
+        formats: dateFormats,
+        defaultWidth: 'full'
+      }),
+      time: buildFormatLongFn({
+        formats: timeFormats,
+        defaultWidth: 'full'
+      }),
+      dateTime: buildFormatLongFn({
+        formats: dateTimeFormats,
+        defaultWidth: 'full'
+      })
+    };
+    var formatLong$1 = formatLong;
+
+    var formatRelativeLocale = {
+      lastWeek: "'last' eeee 'at' p",
+      yesterday: "'yesterday at' p",
+      today: "'today at' p",
+      tomorrow: "'tomorrow at' p",
+      nextWeek: "eeee 'at' p",
+      other: 'P'
+    };
+    var formatRelative = function formatRelative(token, _date, _baseDate, _options) {
+      return formatRelativeLocale[token];
+    };
+    var formatRelative$1 = formatRelative;
+
+    function buildLocalizeFn(args) {
+      return function (dirtyIndex, options) {
+        var context = options !== null && options !== void 0 && options.context ? String(options.context) : 'standalone';
+        var valuesArray;
+        if (context === 'formatting' && args.formattingValues) {
+          var defaultWidth = args.defaultFormattingWidth || args.defaultWidth;
+          var width = options !== null && options !== void 0 && options.width ? String(options.width) : defaultWidth;
+          valuesArray = args.formattingValues[width] || args.formattingValues[defaultWidth];
+        } else {
+          var _defaultWidth = args.defaultWidth;
+          var _width = options !== null && options !== void 0 && options.width ? String(options.width) : args.defaultWidth;
+          valuesArray = args.values[_width] || args.values[_defaultWidth];
+        }
+        var index = args.argumentCallback ? args.argumentCallback(dirtyIndex) : dirtyIndex;
+        // @ts-ignore: For some reason TypeScript just don't want to match it, no matter how hard we try. I challenge you to try to remove it!
+        return valuesArray[index];
+      };
+    }
+
+    var eraValues = {
+      narrow: ['B', 'A'],
+      abbreviated: ['BC', 'AD'],
+      wide: ['Before Christ', 'Anno Domini']
+    };
+    var quarterValues = {
+      narrow: ['1', '2', '3', '4'],
+      abbreviated: ['Q1', 'Q2', 'Q3', 'Q4'],
+      wide: ['1st quarter', '2nd quarter', '3rd quarter', '4th quarter']
+    };
+
+    // Note: in English, the names of days of the week and months are capitalized.
+    // If you are making a new locale based on this one, check if the same is true for the language you're working on.
+    // Generally, formatted dates should look like they are in the middle of a sentence,
+    // e.g. in Spanish language the weekdays and months should be in the lowercase.
+    var monthValues = {
+      narrow: ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'],
+      abbreviated: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+      wide: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    };
+    var dayValues = {
+      narrow: ['S', 'M', 'T', 'W', 'T', 'F', 'S'],
+      short: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
+      abbreviated: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+      wide: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    };
+    var dayPeriodValues = {
+      narrow: {
+        am: 'a',
+        pm: 'p',
+        midnight: 'mi',
+        noon: 'n',
+        morning: 'morning',
+        afternoon: 'afternoon',
+        evening: 'evening',
+        night: 'night'
+      },
+      abbreviated: {
+        am: 'AM',
+        pm: 'PM',
+        midnight: 'midnight',
+        noon: 'noon',
+        morning: 'morning',
+        afternoon: 'afternoon',
+        evening: 'evening',
+        night: 'night'
+      },
+      wide: {
+        am: 'a.m.',
+        pm: 'p.m.',
+        midnight: 'midnight',
+        noon: 'noon',
+        morning: 'morning',
+        afternoon: 'afternoon',
+        evening: 'evening',
+        night: 'night'
+      }
+    };
+    var formattingDayPeriodValues = {
+      narrow: {
+        am: 'a',
+        pm: 'p',
+        midnight: 'mi',
+        noon: 'n',
+        morning: 'in the morning',
+        afternoon: 'in the afternoon',
+        evening: 'in the evening',
+        night: 'at night'
+      },
+      abbreviated: {
+        am: 'AM',
+        pm: 'PM',
+        midnight: 'midnight',
+        noon: 'noon',
+        morning: 'in the morning',
+        afternoon: 'in the afternoon',
+        evening: 'in the evening',
+        night: 'at night'
+      },
+      wide: {
+        am: 'a.m.',
+        pm: 'p.m.',
+        midnight: 'midnight',
+        noon: 'noon',
+        morning: 'in the morning',
+        afternoon: 'in the afternoon',
+        evening: 'in the evening',
+        night: 'at night'
+      }
+    };
+    var ordinalNumber = function ordinalNumber(dirtyNumber, _options) {
+      var number = Number(dirtyNumber);
+
+      // If ordinal numbers depend on context, for example,
+      // if they are different for different grammatical genders,
+      // use `options.unit`.
+      //
+      // `unit` can be 'year', 'quarter', 'month', 'week', 'date', 'dayOfYear',
+      // 'day', 'hour', 'minute', 'second'.
+
+      var rem100 = number % 100;
+      if (rem100 > 20 || rem100 < 10) {
+        switch (rem100 % 10) {
+          case 1:
+            return number + 'st';
+          case 2:
+            return number + 'nd';
+          case 3:
+            return number + 'rd';
+        }
+      }
+      return number + 'th';
+    };
+    var localize = {
+      ordinalNumber: ordinalNumber,
+      era: buildLocalizeFn({
+        values: eraValues,
+        defaultWidth: 'wide'
+      }),
+      quarter: buildLocalizeFn({
+        values: quarterValues,
+        defaultWidth: 'wide',
+        argumentCallback: function argumentCallback(quarter) {
+          return quarter - 1;
+        }
+      }),
+      month: buildLocalizeFn({
+        values: monthValues,
+        defaultWidth: 'wide'
+      }),
+      day: buildLocalizeFn({
+        values: dayValues,
+        defaultWidth: 'wide'
+      }),
+      dayPeriod: buildLocalizeFn({
+        values: dayPeriodValues,
+        defaultWidth: 'wide',
+        formattingValues: formattingDayPeriodValues,
+        defaultFormattingWidth: 'wide'
+      })
+    };
+    var localize$1 = localize;
+
+    function buildMatchFn(args) {
+      return function (string) {
+        var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+        var width = options.width;
+        var matchPattern = width && args.matchPatterns[width] || args.matchPatterns[args.defaultMatchWidth];
+        var matchResult = string.match(matchPattern);
+        if (!matchResult) {
+          return null;
+        }
+        var matchedString = matchResult[0];
+        var parsePatterns = width && args.parsePatterns[width] || args.parsePatterns[args.defaultParseWidth];
+        var key = Array.isArray(parsePatterns) ? findIndex(parsePatterns, function (pattern) {
+          return pattern.test(matchedString);
+        }) : findKey$1(parsePatterns, function (pattern) {
+          return pattern.test(matchedString);
+        });
+        var value;
+        value = args.valueCallback ? args.valueCallback(key) : key;
+        value = options.valueCallback ? options.valueCallback(value) : value;
+        var rest = string.slice(matchedString.length);
+        return {
+          value: value,
+          rest: rest
+        };
+      };
+    }
+    function findKey$1(object, predicate) {
+      for (var key in object) {
+        if (object.hasOwnProperty(key) && predicate(object[key])) {
+          return key;
+        }
+      }
+      return undefined;
+    }
+    function findIndex(array, predicate) {
+      for (var key = 0; key < array.length; key++) {
+        if (predicate(array[key])) {
+          return key;
+        }
+      }
+      return undefined;
+    }
+
+    function buildMatchPatternFn(args) {
+      return function (string) {
+        var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+        var matchResult = string.match(args.matchPattern);
+        if (!matchResult) return null;
+        var matchedString = matchResult[0];
+        var parseResult = string.match(args.parsePattern);
+        if (!parseResult) return null;
+        var value = args.valueCallback ? args.valueCallback(parseResult[0]) : parseResult[0];
+        value = options.valueCallback ? options.valueCallback(value) : value;
+        var rest = string.slice(matchedString.length);
+        return {
+          value: value,
+          rest: rest
+        };
+      };
+    }
+
+    var matchOrdinalNumberPattern = /^(\d+)(th|st|nd|rd)?/i;
+    var parseOrdinalNumberPattern = /\d+/i;
+    var matchEraPatterns = {
+      narrow: /^(b|a)/i,
+      abbreviated: /^(b\.?\s?c\.?|b\.?\s?c\.?\s?e\.?|a\.?\s?d\.?|c\.?\s?e\.?)/i,
+      wide: /^(before christ|before common era|anno domini|common era)/i
+    };
+    var parseEraPatterns = {
+      any: [/^b/i, /^(a|c)/i]
+    };
+    var matchQuarterPatterns = {
+      narrow: /^[1234]/i,
+      abbreviated: /^q[1234]/i,
+      wide: /^[1234](th|st|nd|rd)? quarter/i
+    };
+    var parseQuarterPatterns = {
+      any: [/1/i, /2/i, /3/i, /4/i]
+    };
+    var matchMonthPatterns = {
+      narrow: /^[jfmasond]/i,
+      abbreviated: /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
+      wide: /^(january|february|march|april|may|june|july|august|september|october|november|december)/i
+    };
+    var parseMonthPatterns = {
+      narrow: [/^j/i, /^f/i, /^m/i, /^a/i, /^m/i, /^j/i, /^j/i, /^a/i, /^s/i, /^o/i, /^n/i, /^d/i],
+      any: [/^ja/i, /^f/i, /^mar/i, /^ap/i, /^may/i, /^jun/i, /^jul/i, /^au/i, /^s/i, /^o/i, /^n/i, /^d/i]
+    };
+    var matchDayPatterns = {
+      narrow: /^[smtwf]/i,
+      short: /^(su|mo|tu|we|th|fr|sa)/i,
+      abbreviated: /^(sun|mon|tue|wed|thu|fri|sat)/i,
+      wide: /^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/i
+    };
+    var parseDayPatterns = {
+      narrow: [/^s/i, /^m/i, /^t/i, /^w/i, /^t/i, /^f/i, /^s/i],
+      any: [/^su/i, /^m/i, /^tu/i, /^w/i, /^th/i, /^f/i, /^sa/i]
+    };
+    var matchDayPeriodPatterns = {
+      narrow: /^(a|p|mi|n|(in the|at) (morning|afternoon|evening|night))/i,
+      any: /^([ap]\.?\s?m\.?|midnight|noon|(in the|at) (morning|afternoon|evening|night))/i
+    };
+    var parseDayPeriodPatterns = {
+      any: {
+        am: /^a/i,
+        pm: /^p/i,
+        midnight: /^mi/i,
+        noon: /^no/i,
+        morning: /morning/i,
+        afternoon: /afternoon/i,
+        evening: /evening/i,
+        night: /night/i
+      }
+    };
+    var match = {
+      ordinalNumber: buildMatchPatternFn({
+        matchPattern: matchOrdinalNumberPattern,
+        parsePattern: parseOrdinalNumberPattern,
+        valueCallback: function valueCallback(value) {
+          return parseInt(value, 10);
+        }
+      }),
+      era: buildMatchFn({
+        matchPatterns: matchEraPatterns,
+        defaultMatchWidth: 'wide',
+        parsePatterns: parseEraPatterns,
+        defaultParseWidth: 'any'
+      }),
+      quarter: buildMatchFn({
+        matchPatterns: matchQuarterPatterns,
+        defaultMatchWidth: 'wide',
+        parsePatterns: parseQuarterPatterns,
+        defaultParseWidth: 'any',
+        valueCallback: function valueCallback(index) {
+          return index + 1;
+        }
+      }),
+      month: buildMatchFn({
+        matchPatterns: matchMonthPatterns,
+        defaultMatchWidth: 'wide',
+        parsePatterns: parseMonthPatterns,
+        defaultParseWidth: 'any'
+      }),
+      day: buildMatchFn({
+        matchPatterns: matchDayPatterns,
+        defaultMatchWidth: 'wide',
+        parsePatterns: parseDayPatterns,
+        defaultParseWidth: 'any'
+      }),
+      dayPeriod: buildMatchFn({
+        matchPatterns: matchDayPeriodPatterns,
+        defaultMatchWidth: 'any',
+        parsePatterns: parseDayPeriodPatterns,
+        defaultParseWidth: 'any'
+      })
+    };
+    var match$1 = match;
+
+    /**
+     * @type {Locale}
+     * @category Locales
+     * @summary English locale (United States).
+     * @language English
+     * @iso-639-2 eng
+     * @author Sasha Koss [@kossnocorp]{@link https://github.com/kossnocorp}
+     * @author Lesha Koss [@leshakoss]{@link https://github.com/leshakoss}
+     */
+    var locale = {
+      code: 'en-US',
+      formatDistance: formatDistance$1,
+      formatLong: formatLong$1,
+      formatRelative: formatRelative$1,
+      localize: localize$1,
+      match: match$1,
+      options: {
+        weekStartsOn: 0 /* Sunday */,
+        firstWeekContainsDate: 1
+      }
+    };
+    var defaultLocale = locale;
+
+    // - [yYQqMLwIdDecihHKkms]o matches any available ordinal number token
+    //   (one of the certain letters followed by `o`)
+    // - (\w)\1* matches any sequences of the same letter
+    // - '' matches two quote characters in a row
+    // - '(''|[^'])+('|$) matches anything surrounded by two quote characters ('),
+    //   except a single quote symbol, which ends the sequence.
+    //   Two quote characters do not end the sequence.
+    //   If there is no matching single quote
+    //   then the sequence will continue until the end of the string.
+    // - . matches any single character unmatched by previous parts of the RegExps
+    var formattingTokensRegExp = /[yYQqMLwIdDecihHKkms]o|(\w)\1*|''|'(''|[^'])+('|$)|./g;
+
+    // This RegExp catches symbols escaped by quotes, and also
+    // sequences of symbols P, p, and the combinations like `PPPPPPPppppp`
+    var longFormattingTokensRegExp = /P+p+|P+|p+|''|'(''|[^'])+('|$)|./g;
+    var escapedStringRegExp = /^'([^]*?)'?$/;
+    var doubleQuoteRegExp = /''/g;
+    var unescapedLatinCharacterRegExp = /[a-zA-Z]/;
+
+    /**
+     * @name format
+     * @category Common Helpers
+     * @summary Format the date.
+     *
+     * @description
+     * Return the formatted date string in the given format. The result may vary by locale.
+     *
+     * > ⚠️ Please note that the `format` tokens differ from Moment.js and other libraries.
+     * > See: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     *
+     * The characters wrapped between two single quotes characters (') are escaped.
+     * Two single quotes in a row, whether inside or outside a quoted sequence, represent a 'real' single quote.
+     * (see the last example)
+     *
+     * Format of the string is based on Unicode Technical Standard #35:
+     * https://www.unicode.org/reports/tr35/tr35-dates.html#Date_Field_Symbol_Table
+     * with a few additions (see note 7 below the table).
+     *
+     * Accepted patterns:
+     * | Unit                            | Pattern | Result examples                   | Notes |
+     * |---------------------------------|---------|-----------------------------------|-------|
+     * | Era                             | G..GGG  | AD, BC                            |       |
+     * |                                 | GGGG    | Anno Domini, Before Christ        | 2     |
+     * |                                 | GGGGG   | A, B                              |       |
+     * | Calendar year                   | y       | 44, 1, 1900, 2017                 | 5     |
+     * |                                 | yo      | 44th, 1st, 0th, 17th              | 5,7   |
+     * |                                 | yy      | 44, 01, 00, 17                    | 5     |
+     * |                                 | yyy     | 044, 001, 1900, 2017              | 5     |
+     * |                                 | yyyy    | 0044, 0001, 1900, 2017            | 5     |
+     * |                                 | yyyyy   | ...                               | 3,5   |
+     * | Local week-numbering year       | Y       | 44, 1, 1900, 2017                 | 5     |
+     * |                                 | Yo      | 44th, 1st, 1900th, 2017th         | 5,7   |
+     * |                                 | YY      | 44, 01, 00, 17                    | 5,8   |
+     * |                                 | YYY     | 044, 001, 1900, 2017              | 5     |
+     * |                                 | YYYY    | 0044, 0001, 1900, 2017            | 5,8   |
+     * |                                 | YYYYY   | ...                               | 3,5   |
+     * | ISO week-numbering year         | R       | -43, 0, 1, 1900, 2017             | 5,7   |
+     * |                                 | RR      | -43, 00, 01, 1900, 2017           | 5,7   |
+     * |                                 | RRR     | -043, 000, 001, 1900, 2017        | 5,7   |
+     * |                                 | RRRR    | -0043, 0000, 0001, 1900, 2017     | 5,7   |
+     * |                                 | RRRRR   | ...                               | 3,5,7 |
+     * | Extended year                   | u       | -43, 0, 1, 1900, 2017             | 5     |
+     * |                                 | uu      | -43, 01, 1900, 2017               | 5     |
+     * |                                 | uuu     | -043, 001, 1900, 2017             | 5     |
+     * |                                 | uuuu    | -0043, 0001, 1900, 2017           | 5     |
+     * |                                 | uuuuu   | ...                               | 3,5   |
+     * | Quarter (formatting)            | Q       | 1, 2, 3, 4                        |       |
+     * |                                 | Qo      | 1st, 2nd, 3rd, 4th                | 7     |
+     * |                                 | QQ      | 01, 02, 03, 04                    |       |
+     * |                                 | QQQ     | Q1, Q2, Q3, Q4                    |       |
+     * |                                 | QQQQ    | 1st quarter, 2nd quarter, ...     | 2     |
+     * |                                 | QQQQQ   | 1, 2, 3, 4                        | 4     |
+     * | Quarter (stand-alone)           | q       | 1, 2, 3, 4                        |       |
+     * |                                 | qo      | 1st, 2nd, 3rd, 4th                | 7     |
+     * |                                 | qq      | 01, 02, 03, 04                    |       |
+     * |                                 | qqq     | Q1, Q2, Q3, Q4                    |       |
+     * |                                 | qqqq    | 1st quarter, 2nd quarter, ...     | 2     |
+     * |                                 | qqqqq   | 1, 2, 3, 4                        | 4     |
+     * | Month (formatting)              | M       | 1, 2, ..., 12                     |       |
+     * |                                 | Mo      | 1st, 2nd, ..., 12th               | 7     |
+     * |                                 | MM      | 01, 02, ..., 12                   |       |
+     * |                                 | MMM     | Jan, Feb, ..., Dec                |       |
+     * |                                 | MMMM    | January, February, ..., December  | 2     |
+     * |                                 | MMMMM   | J, F, ..., D                      |       |
+     * | Month (stand-alone)             | L       | 1, 2, ..., 12                     |       |
+     * |                                 | Lo      | 1st, 2nd, ..., 12th               | 7     |
+     * |                                 | LL      | 01, 02, ..., 12                   |       |
+     * |                                 | LLL     | Jan, Feb, ..., Dec                |       |
+     * |                                 | LLLL    | January, February, ..., December  | 2     |
+     * |                                 | LLLLL   | J, F, ..., D                      |       |
+     * | Local week of year              | w       | 1, 2, ..., 53                     |       |
+     * |                                 | wo      | 1st, 2nd, ..., 53th               | 7     |
+     * |                                 | ww      | 01, 02, ..., 53                   |       |
+     * | ISO week of year                | I       | 1, 2, ..., 53                     | 7     |
+     * |                                 | Io      | 1st, 2nd, ..., 53th               | 7     |
+     * |                                 | II      | 01, 02, ..., 53                   | 7     |
+     * | Day of month                    | d       | 1, 2, ..., 31                     |       |
+     * |                                 | do      | 1st, 2nd, ..., 31st               | 7     |
+     * |                                 | dd      | 01, 02, ..., 31                   |       |
+     * | Day of year                     | D       | 1, 2, ..., 365, 366               | 9     |
+     * |                                 | Do      | 1st, 2nd, ..., 365th, 366th       | 7     |
+     * |                                 | DD      | 01, 02, ..., 365, 366             | 9     |
+     * |                                 | DDD     | 001, 002, ..., 365, 366           |       |
+     * |                                 | DDDD    | ...                               | 3     |
+     * | Day of week (formatting)        | E..EEE  | Mon, Tue, Wed, ..., Sun           |       |
+     * |                                 | EEEE    | Monday, Tuesday, ..., Sunday      | 2     |
+     * |                                 | EEEEE   | M, T, W, T, F, S, S               |       |
+     * |                                 | EEEEEE  | Mo, Tu, We, Th, Fr, Sa, Su        |       |
+     * | ISO day of week (formatting)    | i       | 1, 2, 3, ..., 7                   | 7     |
+     * |                                 | io      | 1st, 2nd, ..., 7th                | 7     |
+     * |                                 | ii      | 01, 02, ..., 07                   | 7     |
+     * |                                 | iii     | Mon, Tue, Wed, ..., Sun           | 7     |
+     * |                                 | iiii    | Monday, Tuesday, ..., Sunday      | 2,7   |
+     * |                                 | iiiii   | M, T, W, T, F, S, S               | 7     |
+     * |                                 | iiiiii  | Mo, Tu, We, Th, Fr, Sa, Su        | 7     |
+     * | Local day of week (formatting)  | e       | 2, 3, 4, ..., 1                   |       |
+     * |                                 | eo      | 2nd, 3rd, ..., 1st                | 7     |
+     * |                                 | ee      | 02, 03, ..., 01                   |       |
+     * |                                 | eee     | Mon, Tue, Wed, ..., Sun           |       |
+     * |                                 | eeee    | Monday, Tuesday, ..., Sunday      | 2     |
+     * |                                 | eeeee   | M, T, W, T, F, S, S               |       |
+     * |                                 | eeeeee  | Mo, Tu, We, Th, Fr, Sa, Su        |       |
+     * | Local day of week (stand-alone) | c       | 2, 3, 4, ..., 1                   |       |
+     * |                                 | co      | 2nd, 3rd, ..., 1st                | 7     |
+     * |                                 | cc      | 02, 03, ..., 01                   |       |
+     * |                                 | ccc     | Mon, Tue, Wed, ..., Sun           |       |
+     * |                                 | cccc    | Monday, Tuesday, ..., Sunday      | 2     |
+     * |                                 | ccccc   | M, T, W, T, F, S, S               |       |
+     * |                                 | cccccc  | Mo, Tu, We, Th, Fr, Sa, Su        |       |
+     * | AM, PM                          | a..aa   | AM, PM                            |       |
+     * |                                 | aaa     | am, pm                            |       |
+     * |                                 | aaaa    | a.m., p.m.                        | 2     |
+     * |                                 | aaaaa   | a, p                              |       |
+     * | AM, PM, noon, midnight          | b..bb   | AM, PM, noon, midnight            |       |
+     * |                                 | bbb     | am, pm, noon, midnight            |       |
+     * |                                 | bbbb    | a.m., p.m., noon, midnight        | 2     |
+     * |                                 | bbbbb   | a, p, n, mi                       |       |
+     * | Flexible day period             | B..BBB  | at night, in the morning, ...     |       |
+     * |                                 | BBBB    | at night, in the morning, ...     | 2     |
+     * |                                 | BBBBB   | at night, in the morning, ...     |       |
+     * | Hour [1-12]                     | h       | 1, 2, ..., 11, 12                 |       |
+     * |                                 | ho      | 1st, 2nd, ..., 11th, 12th         | 7     |
+     * |                                 | hh      | 01, 02, ..., 11, 12               |       |
+     * | Hour [0-23]                     | H       | 0, 1, 2, ..., 23                  |       |
+     * |                                 | Ho      | 0th, 1st, 2nd, ..., 23rd          | 7     |
+     * |                                 | HH      | 00, 01, 02, ..., 23               |       |
+     * | Hour [0-11]                     | K       | 1, 2, ..., 11, 0                  |       |
+     * |                                 | Ko      | 1st, 2nd, ..., 11th, 0th          | 7     |
+     * |                                 | KK      | 01, 02, ..., 11, 00               |       |
+     * | Hour [1-24]                     | k       | 24, 1, 2, ..., 23                 |       |
+     * |                                 | ko      | 24th, 1st, 2nd, ..., 23rd         | 7     |
+     * |                                 | kk      | 24, 01, 02, ..., 23               |       |
+     * | Minute                          | m       | 0, 1, ..., 59                     |       |
+     * |                                 | mo      | 0th, 1st, ..., 59th               | 7     |
+     * |                                 | mm      | 00, 01, ..., 59                   |       |
+     * | Second                          | s       | 0, 1, ..., 59                     |       |
+     * |                                 | so      | 0th, 1st, ..., 59th               | 7     |
+     * |                                 | ss      | 00, 01, ..., 59                   |       |
+     * | Fraction of second              | S       | 0, 1, ..., 9                      |       |
+     * |                                 | SS      | 00, 01, ..., 99                   |       |
+     * |                                 | SSS     | 000, 001, ..., 999                |       |
+     * |                                 | SSSS    | ...                               | 3     |
+     * | Timezone (ISO-8601 w/ Z)        | X       | -08, +0530, Z                     |       |
+     * |                                 | XX      | -0800, +0530, Z                   |       |
+     * |                                 | XXX     | -08:00, +05:30, Z                 |       |
+     * |                                 | XXXX    | -0800, +0530, Z, +123456          | 2     |
+     * |                                 | XXXXX   | -08:00, +05:30, Z, +12:34:56      |       |
+     * | Timezone (ISO-8601 w/o Z)       | x       | -08, +0530, +00                   |       |
+     * |                                 | xx      | -0800, +0530, +0000               |       |
+     * |                                 | xxx     | -08:00, +05:30, +00:00            | 2     |
+     * |                                 | xxxx    | -0800, +0530, +0000, +123456      |       |
+     * |                                 | xxxxx   | -08:00, +05:30, +00:00, +12:34:56 |       |
+     * | Timezone (GMT)                  | O...OOO | GMT-8, GMT+5:30, GMT+0            |       |
+     * |                                 | OOOO    | GMT-08:00, GMT+05:30, GMT+00:00   | 2     |
+     * | Timezone (specific non-locat.)  | z...zzz | GMT-8, GMT+5:30, GMT+0            | 6     |
+     * |                                 | zzzz    | GMT-08:00, GMT+05:30, GMT+00:00   | 2,6   |
+     * | Seconds timestamp               | t       | 512969520                         | 7     |
+     * |                                 | tt      | ...                               | 3,7   |
+     * | Milliseconds timestamp          | T       | 512969520900                      | 7     |
+     * |                                 | TT      | ...                               | 3,7   |
+     * | Long localized date             | P       | 04/29/1453                        | 7     |
+     * |                                 | PP      | Apr 29, 1453                      | 7     |
+     * |                                 | PPP     | April 29th, 1453                  | 7     |
+     * |                                 | PPPP    | Friday, April 29th, 1453          | 2,7   |
+     * | Long localized time             | p       | 12:00 AM                          | 7     |
+     * |                                 | pp      | 12:00:00 AM                       | 7     |
+     * |                                 | ppp     | 12:00:00 AM GMT+2                 | 7     |
+     * |                                 | pppp    | 12:00:00 AM GMT+02:00             | 2,7   |
+     * | Combination of date and time    | Pp      | 04/29/1453, 12:00 AM              | 7     |
+     * |                                 | PPpp    | Apr 29, 1453, 12:00:00 AM         | 7     |
+     * |                                 | PPPppp  | April 29th, 1453 at ...           | 7     |
+     * |                                 | PPPPpppp| Friday, April 29th, 1453 at ...   | 2,7   |
+     * Notes:
+     * 1. "Formatting" units (e.g. formatting quarter) in the default en-US locale
+     *    are the same as "stand-alone" units, but are different in some languages.
+     *    "Formatting" units are declined according to the rules of the language
+     *    in the context of a date. "Stand-alone" units are always nominative singular:
+     *
+     *    `format(new Date(2017, 10, 6), 'do LLLL', {locale: cs}) //=> '6. listopad'`
+     *
+     *    `format(new Date(2017, 10, 6), 'do MMMM', {locale: cs}) //=> '6. listopadu'`
+     *
+     * 2. Any sequence of the identical letters is a pattern, unless it is escaped by
+     *    the single quote characters (see below).
+     *    If the sequence is longer than listed in table (e.g. `EEEEEEEEEEE`)
+     *    the output will be the same as default pattern for this unit, usually
+     *    the longest one (in case of ISO weekdays, `EEEE`). Default patterns for units
+     *    are marked with "2" in the last column of the table.
+     *
+     *    `format(new Date(2017, 10, 6), 'MMM') //=> 'Nov'`
+     *
+     *    `format(new Date(2017, 10, 6), 'MMMM') //=> 'November'`
+     *
+     *    `format(new Date(2017, 10, 6), 'MMMMM') //=> 'N'`
+     *
+     *    `format(new Date(2017, 10, 6), 'MMMMMM') //=> 'November'`
+     *
+     *    `format(new Date(2017, 10, 6), 'MMMMMMM') //=> 'November'`
+     *
+     * 3. Some patterns could be unlimited length (such as `yyyyyyyy`).
+     *    The output will be padded with zeros to match the length of the pattern.
+     *
+     *    `format(new Date(2017, 10, 6), 'yyyyyyyy') //=> '00002017'`
+     *
+     * 4. `QQQQQ` and `qqqqq` could be not strictly numerical in some locales.
+     *    These tokens represent the shortest form of the quarter.
+     *
+     * 5. The main difference between `y` and `u` patterns are B.C. years:
+     *
+     *    | Year | `y` | `u` |
+     *    |------|-----|-----|
+     *    | AC 1 |   1 |   1 |
+     *    | BC 1 |   1 |   0 |
+     *    | BC 2 |   2 |  -1 |
+     *
+     *    Also `yy` always returns the last two digits of a year,
+     *    while `uu` pads single digit years to 2 characters and returns other years unchanged:
+     *
+     *    | Year | `yy` | `uu` |
+     *    |------|------|------|
+     *    | 1    |   01 |   01 |
+     *    | 14   |   14 |   14 |
+     *    | 376  |   76 |  376 |
+     *    | 1453 |   53 | 1453 |
+     *
+     *    The same difference is true for local and ISO week-numbering years (`Y` and `R`),
+     *    except local week-numbering years are dependent on `options.weekStartsOn`
+     *    and `options.firstWeekContainsDate` (compare [getISOWeekYear]{@link https://date-fns.org/docs/getISOWeekYear}
+     *    and [getWeekYear]{@link https://date-fns.org/docs/getWeekYear}).
+     *
+     * 6. Specific non-location timezones are currently unavailable in `date-fns`,
+     *    so right now these tokens fall back to GMT timezones.
+     *
+     * 7. These patterns are not in the Unicode Technical Standard #35:
+     *    - `i`: ISO day of week
+     *    - `I`: ISO week of year
+     *    - `R`: ISO week-numbering year
+     *    - `t`: seconds timestamp
+     *    - `T`: milliseconds timestamp
+     *    - `o`: ordinal number modifier
+     *    - `P`: long localized date
+     *    - `p`: long localized time
+     *
+     * 8. `YY` and `YYYY` tokens represent week-numbering years but they are often confused with years.
+     *    You should enable `options.useAdditionalWeekYearTokens` to use them. See: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     *
+     * 9. `D` and `DD` tokens represent days of the year but they are often confused with days of the month.
+     *    You should enable `options.useAdditionalDayOfYearTokens` to use them. See: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     *
+     * @param {Date|Number} date - the original date
+     * @param {String} format - the string of tokens
+     * @param {Object} [options] - an object with options.
+     * @param {Locale} [options.locale=defaultLocale] - the locale object. See [Locale]{@link https://date-fns.org/docs/Locale}
+     * @param {0|1|2|3|4|5|6} [options.weekStartsOn=0] - the index of the first day of the week (0 - Sunday)
+     * @param {Number} [options.firstWeekContainsDate=1] - the day of January, which is
+     * @param {Boolean} [options.useAdditionalWeekYearTokens=false] - if true, allows usage of the week-numbering year tokens `YY` and `YYYY`;
+     *   see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     * @param {Boolean} [options.useAdditionalDayOfYearTokens=false] - if true, allows usage of the day of year tokens `D` and `DD`;
+     *   see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     * @returns {String} the formatted date string
+     * @throws {TypeError} 2 arguments required
+     * @throws {RangeError} `date` must not be Invalid Date
+     * @throws {RangeError} `options.locale` must contain `localize` property
+     * @throws {RangeError} `options.locale` must contain `formatLong` property
+     * @throws {RangeError} `options.weekStartsOn` must be between 0 and 6
+     * @throws {RangeError} `options.firstWeekContainsDate` must be between 1 and 7
+     * @throws {RangeError} use `yyyy` instead of `YYYY` for formatting years using [format provided] to the input [input provided]; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     * @throws {RangeError} use `yy` instead of `YY` for formatting years using [format provided] to the input [input provided]; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     * @throws {RangeError} use `d` instead of `D` for formatting days of the month using [format provided] to the input [input provided]; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     * @throws {RangeError} use `dd` instead of `DD` for formatting days of the month using [format provided] to the input [input provided]; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md
+     * @throws {RangeError} format string contains an unescaped latin alphabet character
+     *
+     * @example
+     * // Represent 11 February 2014 in middle-endian format:
+     * const result = format(new Date(2014, 1, 11), 'MM/dd/yyyy')
+     * //=> '02/11/2014'
+     *
+     * @example
+     * // Represent 2 July 2014 in Esperanto:
+     * import { eoLocale } from 'date-fns/locale/eo'
+     * const result = format(new Date(2014, 6, 2), "do 'de' MMMM yyyy", {
+     *   locale: eoLocale
+     * })
+     * //=> '2-a de julio 2014'
+     *
+     * @example
+     * // Escape string by single quote characters:
+     * const result = format(new Date(2014, 6, 2, 15), "h 'o''clock'")
+     * //=> "3 o'clock"
+     */
+
+    function format(dirtyDate, dirtyFormatStr, options) {
+      var _ref, _options$locale, _ref2, _ref3, _ref4, _options$firstWeekCon, _options$locale2, _options$locale2$opti, _defaultOptions$local, _defaultOptions$local2, _ref5, _ref6, _ref7, _options$weekStartsOn, _options$locale3, _options$locale3$opti, _defaultOptions$local3, _defaultOptions$local4;
+      requiredArgs(2, arguments);
+      var formatStr = String(dirtyFormatStr);
+      var defaultOptions = getDefaultOptions();
+      var locale = (_ref = (_options$locale = options === null || options === void 0 ? void 0 : options.locale) !== null && _options$locale !== void 0 ? _options$locale : defaultOptions.locale) !== null && _ref !== void 0 ? _ref : defaultLocale;
+      var firstWeekContainsDate = toInteger((_ref2 = (_ref3 = (_ref4 = (_options$firstWeekCon = options === null || options === void 0 ? void 0 : options.firstWeekContainsDate) !== null && _options$firstWeekCon !== void 0 ? _options$firstWeekCon : options === null || options === void 0 ? void 0 : (_options$locale2 = options.locale) === null || _options$locale2 === void 0 ? void 0 : (_options$locale2$opti = _options$locale2.options) === null || _options$locale2$opti === void 0 ? void 0 : _options$locale2$opti.firstWeekContainsDate) !== null && _ref4 !== void 0 ? _ref4 : defaultOptions.firstWeekContainsDate) !== null && _ref3 !== void 0 ? _ref3 : (_defaultOptions$local = defaultOptions.locale) === null || _defaultOptions$local === void 0 ? void 0 : (_defaultOptions$local2 = _defaultOptions$local.options) === null || _defaultOptions$local2 === void 0 ? void 0 : _defaultOptions$local2.firstWeekContainsDate) !== null && _ref2 !== void 0 ? _ref2 : 1);
+
+      // Test if weekStartsOn is between 1 and 7 _and_ is not NaN
+      if (!(firstWeekContainsDate >= 1 && firstWeekContainsDate <= 7)) {
+        throw new RangeError('firstWeekContainsDate must be between 1 and 7 inclusively');
+      }
+      var weekStartsOn = toInteger((_ref5 = (_ref6 = (_ref7 = (_options$weekStartsOn = options === null || options === void 0 ? void 0 : options.weekStartsOn) !== null && _options$weekStartsOn !== void 0 ? _options$weekStartsOn : options === null || options === void 0 ? void 0 : (_options$locale3 = options.locale) === null || _options$locale3 === void 0 ? void 0 : (_options$locale3$opti = _options$locale3.options) === null || _options$locale3$opti === void 0 ? void 0 : _options$locale3$opti.weekStartsOn) !== null && _ref7 !== void 0 ? _ref7 : defaultOptions.weekStartsOn) !== null && _ref6 !== void 0 ? _ref6 : (_defaultOptions$local3 = defaultOptions.locale) === null || _defaultOptions$local3 === void 0 ? void 0 : (_defaultOptions$local4 = _defaultOptions$local3.options) === null || _defaultOptions$local4 === void 0 ? void 0 : _defaultOptions$local4.weekStartsOn) !== null && _ref5 !== void 0 ? _ref5 : 0);
+
+      // Test if weekStartsOn is between 0 and 6 _and_ is not NaN
+      if (!(weekStartsOn >= 0 && weekStartsOn <= 6)) {
+        throw new RangeError('weekStartsOn must be between 0 and 6 inclusively');
+      }
+      if (!locale.localize) {
+        throw new RangeError('locale must contain localize property');
+      }
+      if (!locale.formatLong) {
+        throw new RangeError('locale must contain formatLong property');
+      }
+      var originalDate = toDate(dirtyDate);
+      if (!isValid(originalDate)) {
+        throw new RangeError('Invalid time value');
+      }
+
+      // Convert the date in system timezone to the same date in UTC+00:00 timezone.
+      // This ensures that when UTC functions will be implemented, locales will be compatible with them.
+      // See an issue about UTC functions: https://github.com/date-fns/date-fns/issues/376
+      var timezoneOffset = getTimezoneOffsetInMilliseconds(originalDate);
+      var utcDate = subMilliseconds(originalDate, timezoneOffset);
+      var formatterOptions = {
+        firstWeekContainsDate: firstWeekContainsDate,
+        weekStartsOn: weekStartsOn,
+        locale: locale,
+        _originalDate: originalDate
+      };
+      var result = formatStr.match(longFormattingTokensRegExp).map(function (substring) {
+        var firstCharacter = substring[0];
+        if (firstCharacter === 'p' || firstCharacter === 'P') {
+          var longFormatter = longFormatters$1[firstCharacter];
+          return longFormatter(substring, locale.formatLong);
+        }
+        return substring;
+      }).join('').match(formattingTokensRegExp).map(function (substring) {
+        // Replace two single quote characters with one single quote character
+        if (substring === "''") {
+          return "'";
+        }
+        var firstCharacter = substring[0];
+        if (firstCharacter === "'") {
+          return cleanEscapedString(substring);
+        }
+        var formatter = formatters$2[firstCharacter];
+        if (formatter) {
+          if (!(options !== null && options !== void 0 && options.useAdditionalWeekYearTokens) && isProtectedWeekYearToken(substring)) {
+            throwProtectedError(substring, dirtyFormatStr, String(dirtyDate));
+          }
+          if (!(options !== null && options !== void 0 && options.useAdditionalDayOfYearTokens) && isProtectedDayOfYearToken(substring)) {
+            throwProtectedError(substring, dirtyFormatStr, String(dirtyDate));
+          }
+          return formatter(utcDate, substring, locale.localize, formatterOptions);
+        }
+        if (firstCharacter.match(unescapedLatinCharacterRegExp)) {
+          throw new RangeError('Format string contains an unescaped latin alphabet character `' + firstCharacter + '`');
+        }
+        return substring;
+      }).join('');
+      return result;
+    }
+    function cleanEscapedString(input) {
+      var matched = input.match(escapedStringRegExp);
+      if (!matched) {
+        return input;
+      }
+      return matched[1].replace(doubleQuoteRegExp, "'");
+    }
+
+    /**
+     * @name isAfter
+     * @category Common Helpers
+     * @summary Is the first date after the second one?
+     *
+     * @description
+     * Is the first date after the second one?
+     *
+     * @param {Date|Number} date - the date that should be after the other one to return true
+     * @param {Date|Number} dateToCompare - the date to compare with
+     * @returns {Boolean} the first date is after the second date
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // Is 10 July 1989 after 11 February 1987?
+     * const result = isAfter(new Date(1989, 6, 10), new Date(1987, 1, 11))
+     * //=> true
+     */
+    function isAfter(dirtyDate, dirtyDateToCompare) {
+      requiredArgs(2, arguments);
+      var date = toDate(dirtyDate);
+      var dateToCompare = toDate(dirtyDateToCompare);
+      return date.getTime() > dateToCompare.getTime();
+    }
+
+    /**
+     * @name subDays
+     * @category Day Helpers
+     * @summary Subtract the specified number of days from the given date.
+     *
+     * @description
+     * Subtract the specified number of days from the given date.
+     *
+     * @param {Date|Number} date - the date to be changed
+     * @param {Number} amount - the amount of days to be subtracted. Positive decimals will be rounded using `Math.floor`, decimals less than zero will be rounded using `Math.ceil`.
+     * @returns {Date} the new date with the days subtracted
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // Subtract 10 days from 1 September 2014:
+     * const result = subDays(new Date(2014, 8, 1), 10)
+     * //=> Fri Aug 22 2014 00:00:00
+     */
+    function subDays(dirtyDate, dirtyAmount) {
+      requiredArgs(2, arguments);
+      var amount = toInteger(dirtyAmount);
+      return addDays(dirtyDate, -amount);
+    }
+
+    /**
+     * @name subYears
+     * @category Year Helpers
+     * @summary Subtract the specified number of years from the given date.
+     *
+     * @description
+     * Subtract the specified number of years from the given date.
+     *
+     * @param {Date|Number} date - the date to be changed
+     * @param {Number} amount - the amount of years to be subtracted. Positive decimals will be rounded using `Math.floor`, decimals less than zero will be rounded using `Math.ceil`.
+     * @returns {Date} the new date with the years subtracted
+     * @throws {TypeError} 2 arguments required
+     *
+     * @example
+     * // Subtract 5 years from 1 September 2014:
+     * const result = subYears(new Date(2014, 8, 1), 5)
+     * //=> Tue Sep 01 2009 00:00:00
+     */
+    function subYears(dirtyDate, dirtyAmount) {
+      requiredArgs(2, arguments);
+      var amount = toInteger(dirtyAmount);
+      return addYears(dirtyDate, -amount);
+    }
+
     async function fetchObsPrecip(lat, lon, eDate) {
         const response = await fetch('https://grid2.rcc-acis.org/GridData', {
             method: 'POST',
             body: JSON.stringify({
                 loc: `${lon},${lat}`,
                 grid: 'nrcc-model',
-                sDate: `${eDate.slice(0, 4)}-03-01`,
+                sDate: `${parseInt(eDate.slice(0, 4)) - 1}-01-01`,
                 eDate,
                 elems: [{ name: 'pcpn' }]
             }),
@@ -1597,10 +4136,6 @@ var app = (function () {
         return { returnArr, remainingSum: sum };
     }
     async function fetchForePrecip(lat, lon, sDate) {
-        // If we are past the end of the season we do not need to get the forecast
-        if (sDate.slice(5) === '10-31' && new Date().toISOString().slice(5, 10) !== '10-31') {
-            return [];
-        }
         // Make start date one day earlier to ensure full coverage
         let date = new Date(sDate + 'T00:00');
         date.setDate((date.getDate() - 1));
@@ -1639,26 +4174,65 @@ var app = (function () {
             precipFcstLength: forePrecip.length
         };
     }
-    async function fetchPETData(lat, lon, year) {
-        const response = await fetch(`https://x6xfv2cdrl.execute-api.us-east-1.amazonaws.com/production/irrigation?lat=${lat}&lon=${lon}&year=${year}`);
-        if (!response.ok) {
-            throw new Error(response.statusText);
+    const generateOutOfSeasonArray = (d1, d2) => {
+        const arr = [];
+        for (let i = 0; i < differenceInDays(d1, d2); i++) {
+            arr.push([format(addDays(d2, i), 'yyyy-MM-dd'), 0]);
         }
-        const results = await response.json();
-        const obsPET = results.pet.map((pet, i) => ([year + '-' + results.dates_pet[i].split('/').join('-'), pet]));
-        const forePET = results.pet_fcst.map((pet, i) => ([year + '-' + results.dates_pet_fcst[i].split('/').join('-'), pet]));
+        return arr;
+    };
+    const isOnOrPastDate = (date, compDate, isPastYear) => {
+        return isAfter(date, subDays(compDate, 1)) || isPastYear;
+    };
+    async function fetchPETData(lat, lon, todayStr, yearAdjustment = 0) {
+        if (yearAdjustment < 0)
+            yearAdjustment = Math.abs(yearAdjustment);
+        const targetDate = subYears(new Date(todayStr + 'T00:00'), yearAdjustment);
+        const isPastYear = yearAdjustment > 0;
+        const marchFirst = new Date(targetDate.getFullYear(), 2, 1);
+        const hasSeasonStarted = isOnOrPastDate(targetDate, marchFirst, isPastYear);
+        const novFirst = new Date(targetDate.getFullYear(), 10, 1);
+        const hasSeasonEnded = isOnOrPastDate(targetDate, novFirst, isPastYear);
+        const janFirst = new Date(targetDate.getFullYear(), 0, 1);
+        const janFirstNextYear = new Date(targetDate.getFullYear() + 1, 0, 1);
+        const preSeason = generateOutOfSeasonArray(hasSeasonStarted ? marchFirst : targetDate, janFirst);
+        const postSeason = hasSeasonEnded ? generateOutOfSeasonArray(isPastYear ? janFirstNextYear : targetDate, novFirst) : [];
+        let season = [];
+        let forecast = [];
+        if (hasSeasonStarted) {
+            const year = targetDate.getFullYear();
+            const response = await fetch(`https://x6xfv2cdrl.execute-api.us-east-1.amazonaws.com/production/irrigation?lat=${lat}&lon=${lon}&year=${year}`);
+            if (!response.ok) {
+                throw new Error(response.statusText);
+            }
+            const results = await response.json();
+            season = results.pet.map((pet, i) => ([year + '-' + results.dates_pet[i].split('/').join('-'), pet]));
+            if (!isPastYear) {
+                if (hasSeasonEnded) {
+                    const lastObsDate = new Date(postSeason[postSeason.length - 1][0] + 'T00:00');
+                    for (let i = 1; i < 4; i++) {
+                        forecast.push([format(addDays(lastObsDate, i), 'yyyy-MM-dd'), 0]);
+                    }
+                }
+                else {
+                    forecast = results.pet_fcst.map((pet, i) => ([year + '-' + results.dates_pet_fcst[i].split('/').join('-'), pet]));
+                }
+            }
+        }
         return {
-            pet: obsPET.concat(forePET),
-            petFcstLength: forePET.length
+            pet: [...preSeason, ...season, ...postSeason, ...forecast],
+            petFcstLength: forecast.length
         };
     }
     async function getWaterData({ lat, lon }, date) {
         try {
             // fetch PET and precip
-            let [{ precip, precipFcstLength }, { pet, petFcstLength }] = await Promise.all([
+            let [{ precip, precipFcstLength }, { pet: lastYearPet }, { pet, petFcstLength }] = await Promise.all([
                 fetchPrecip(lat, lon, date),
-                fetchPETData(lat, lon, date.slice(0, 4))
+                fetchPETData(lat, lon, date, 1),
+                fetchPETData(lat, lon, date)
             ]);
+            pet = lastYearPet.concat(pet);
             // adjust pet and precip to have matching lengths
             const lengthDiff = precip.length - pet.length;
             if (lengthDiff > 0) {
@@ -1676,7 +4250,6 @@ var app = (function () {
                 precip: [],
                 fcstLength: Math.max(precipFcstLength, petFcstLength)
             };
-            console.log(precip);
             // loop through data pushing to results obj and ensuring that the dates match
             for (let i = 0; i < Math.min(pet.length, precip.length); i++) {
                 const [petDate, petValue] = pet[i];
@@ -1690,697 +4263,12 @@ var app = (function () {
                     throw 'PET and precip dates do not match';
                 }
             }
-            console.log(results);
             return results;
         }
         catch (e) {
             console.error(e);
             return null;
         }
-        // return {
-        //   "dates": [
-        //     "2023-03-01",
-        //     "2023-03-02",
-        //     "2023-03-03",
-        //     "2023-03-04",
-        //     "2023-03-05",
-        //     "2023-03-06",
-        //     "2023-03-07",
-        //     "2023-03-08",
-        //     "2023-03-09",
-        //     "2023-03-10",
-        //     "2023-03-11",
-        //     "2023-03-12",
-        //     "2023-03-13",
-        //     "2023-03-14",
-        //     "2023-03-15",
-        //     "2023-03-16",
-        //     "2023-03-17",
-        //     "2023-03-18",
-        //     "2023-03-19",
-        //     "2023-03-20",
-        //     "2023-03-21",
-        //     "2023-03-22",
-        //     "2023-03-23",
-        //     "2023-03-24",
-        //     "2023-03-25",
-        //     "2023-03-26",
-        //     "2023-03-27",
-        //     "2023-03-28",
-        //     "2023-03-29",
-        //     "2023-03-30",
-        //     "2023-03-31",
-        //     "2023-04-01",
-        //     "2023-04-02",
-        //     "2023-04-03",
-        //     "2023-04-04",
-        //     "2023-04-05",
-        //     "2023-04-06",
-        //     "2023-04-07",
-        //     "2023-04-08",
-        //     "2023-04-09",
-        //     "2023-04-10",
-        //     "2023-04-11",
-        //     "2023-04-12",
-        //     "2023-04-13",
-        //     "2023-04-14",
-        //     "2023-04-15",
-        //     "2023-04-16",
-        //     "2023-04-17",
-        //     "2023-04-18",
-        //     "2023-04-19",
-        //     "2023-04-20",
-        //     "2023-04-21",
-        //     "2023-04-22",
-        //     "2023-04-23",
-        //     "2023-04-24",
-        //     "2023-04-25",
-        //     "2023-04-26",
-        //     "2023-04-27",
-        //     "2023-04-28",
-        //     "2023-04-29",
-        //     "2023-04-30",
-        //     "2023-05-01",
-        //     "2023-05-02",
-        //     "2023-05-03",
-        //     "2023-05-04",
-        //     "2023-05-05",
-        //     "2023-05-06",
-        //     "2023-05-07",
-        //     "2023-05-08",
-        //     "2023-05-09",
-        //     "2023-05-10",
-        //     "2023-05-11",
-        //     "2023-05-12",
-        //     "2023-05-13",
-        //     "2023-05-14",
-        //     "2023-05-15",
-        //     "2023-05-16",
-        //     "2023-05-17",
-        //     "2023-05-18",
-        //     "2023-05-19",
-        //     "2023-05-20",
-        //     "2023-05-21",
-        //     "2023-05-22",
-        //     "2023-05-23",
-        //     "2023-05-24",
-        //     "2023-05-25",
-        //     "2023-05-26",
-        //     "2023-05-27",
-        //     "2023-05-28",
-        //     "2023-05-29",
-        //     "2023-05-30",
-        //     "2023-05-31",
-        //     "2023-06-01",
-        //     "2023-06-02",
-        //     "2023-06-03",
-        //     "2023-06-04",
-        //     "2023-06-05",
-        //     "2023-06-06",
-        //     "2023-06-07",
-        //     "2023-06-08",
-        //     "2023-06-09",
-        //     "2023-06-10",
-        //     "2023-06-11",
-        //     "2023-06-12",
-        //     "2023-06-13",
-        //     "2023-06-14",
-        //     "2023-06-15",
-        //     "2023-06-16",
-        //     "2023-06-17",
-        //     "2023-06-18",
-        //     "2023-06-19",
-        //     "2023-06-20",
-        //     "2023-06-21",
-        //     "2023-06-22",
-        //     "2023-06-23",
-        //     "2023-06-24",
-        //     "2023-06-25",
-        //     "2023-06-26",
-        //     "2023-06-27",
-        //     "2023-06-28",
-        //     "2023-06-29",
-        //     "2023-06-30",
-        //     "2023-07-01",
-        //     "2023-07-02",
-        //     "2023-07-03",
-        //     "2023-07-04",
-        //     "2023-07-05",
-        //     "2023-07-06",
-        //     "2023-07-07",
-        //     "2023-07-08",
-        //     "2023-07-09",
-        //     "2023-07-10",
-        //     "2023-07-11",
-        //     "2023-07-12",
-        //     "2023-07-13",
-        //     "2023-07-14",
-        //     "2023-07-15",
-        //     "2023-07-16",
-        //     "2023-07-17",
-        //     "2023-07-18",
-        //     "2023-07-19",
-        //     "2023-07-20",
-        //     "2023-07-21",
-        //     "2023-07-22",
-        //     "2023-07-23",
-        //     "2023-07-24",
-        //     "2023-07-25",
-        //     "2023-07-26",
-        //     "2023-07-27",
-        //     "2023-07-28",
-        //     "2023-07-29",
-        //     "2023-07-30",
-        //     "2023-07-31",
-        //     "2023-08-01",
-        //     "2023-08-02",
-        //     "2023-08-03",
-        //     "2023-08-04",
-        //     "2023-08-05",
-        //     "2023-08-06",
-        //     "2023-08-07",
-        //     "2023-08-08",
-        //     "2023-08-09",
-        //     "2023-08-10",
-        //     "2023-08-11",
-        //     "2023-08-12",
-        //     "2023-08-13",
-        //     "2023-08-14",
-        //     "2023-08-15",
-        //     "2023-08-16",
-        //     "2023-08-17",
-        //     "2023-08-18",
-        //     "2023-08-19",
-        //     "2023-08-20",
-        //     "2023-08-21",
-        //     "2023-08-22",
-        //     "2023-08-23",
-        //     "2023-08-24",
-        //     "2023-08-25",
-        //     "2023-08-26",
-        //     "2023-08-27",
-        //     "2023-08-28",
-        //     "2023-08-29",
-        //     "2023-08-30",
-        //     "2023-08-31",
-        //     "2023-09-01",
-        //     "2023-09-02",
-        //     "2023-09-03",
-        //     "2023-09-04",
-        //     "2023-09-05",
-        //     "2023-09-06",
-        //     "2023-09-07",
-        //     "2023-09-08",
-        //     "2023-09-09",
-        //     "2023-09-10",
-        //     "2023-09-11",
-        //     "2023-09-12",
-        //     "2023-09-13",
-        //     "2023-09-14",
-        //     "2023-09-15",
-        //     "2023-09-16",
-        //     "2023-09-17",
-        //     "2023-09-18",
-        //     "2023-09-19",
-        //     "2023-09-20",
-        //     "2023-09-21",
-        //     "2023-09-22",
-        //     "2023-09-23",
-        //     "2023-09-24",
-        //     "2023-09-25",
-        //     "2023-09-26",
-        //     "2023-09-27",
-        //     "2023-09-28",
-        //     "2023-09-29",
-        //     "2023-09-30",
-        //     "2023-10-01",
-        //     "2023-10-02",
-        //     "2023-10-03",
-        //     "2023-10-04",
-        //     "2023-10-05",
-        //     "2023-10-06",
-        //     "2023-10-07",
-        //     "2023-10-08",
-        //     "2023-10-09",
-        //     "2023-10-10",
-        //     "2023-10-11"
-        //   ],
-        //   "pet": [
-        //     0.009999999776482582,
-        //     0.030792957171797752,
-        //     0.018182311207056046,
-        //     0.02948763407766819,
-        //     0.011305322870612144,
-        //     0.009999999776482582,
-        //     0.03818231076002121,
-        //     0.018182311207056046,
-        //     0.018182311207056046,
-        //     0.018182311207056046,
-        //     0.03261064738035202,
-        //     0.023123012855648994,
-        //     0.0420982800424099,
-        //     0.024312429130077362,
-        //     0.008182311430573463,
-        //     0.02766994573175907,
-        //     0.03454693406820297,
-        //     0.018182311207056046,
-        //     0.02766994573175907,
-        //     0.011305322870612144,
-        //     0.03636462241411209,
-        //     0.047669943422079086,
-        //     0.04818231239914894,
-        //     0.03454693406820297,
-        //     0.047669943422079086,
-        //     0.019999999552965164,
-        //     0.035852257162332535,
-        //     0.052610646933317184,
-        //     0.039793841540813446,
-        //     0.05740559101104736,
-        //     0.0382501520216465,
-        //     0.02914126217365265,
-        //     0.06750795245170593,
-        //     0.053241610527038574,
-        //     0.07142391800880432,
-        //     0.05181768909096718,
-        //     0.047389354556798935,
-        //     0.04181768745183945,
-        //     0.05215621367096901,
-        //     0.08648321777582169,
-        //     0.10466553270816803,
-        //     0.1133602112531662,
-        //     0.10830090939998627,
-        //     0.12454693019390106,
-        //     0.1532416045665741,
-        //     0.16928061842918396,
-        //     0.16932563483715057,
-        //     0.1475079506635666,
-        //     0.033753976225852966,
-        //     0.02261064574122429,
-        //     0.02261064574122429,
-        //     0.11142392456531525,
-        //     0.14375397562980652,
-        //     0.11505930125713348,
-        //     0.042576517909765244,
-        //     0.04324160888791084,
-        //     0.053241610527038574,
-        //     0.05209828168153763,
-        //     0.12387257069349289,
-        //     0.1281823068857193,
-        //     0.03885667026042938,
-        //     0.039881400763988495,
-        //     0.051423922181129456,
-        //     0.0494876354932785,
-        //     0.02948763407766819,
-        //     0.051423922181129456,
-        //     0.05522118881344795,
-        //     0.1126105934381485,
-        //     0.13818225264549255,
-        //     0.1275513917207718,
-        //     0.129487544298172,
-        //     0.1426105946302414,
-        //     0.15818224847316742,
-        //     0.1599999964237213,
-        //     0.15818224847316742,
-        //     0.12818224728107452,
-        //     0.13636448979377747,
-        //     0.12142369151115417,
-        //     0.09142369031906128,
-        //     0.14324145019054413,
-        //     0.13636448979377747,
-        //     0.09687694907188416,
-        //     0.10442834347486496,
-        //     0.15687695145606995,
-        //     0.16687695682048798,
-        //     0.05948754400014877,
-        //     0.12818224728107452,
-        //     0.1613052934408188,
-        //     0.18130530416965485,
-        //     0.18312305212020874,
-        //     0.1932414472103119,
-        //     0.1937538981437683,
-        //     0.19687694311141968,
-        //     0.2013052999973297,
-        //     0.1786947101354599,
-        //     0.1299564093351364,
-        //     0.12319785356521606,
-        //     0.11936914920806885,
-        //     0.0919797420501709,
-        //     0.0581822469830513,
-        //     0.05130529776215553,
-        //     0.0694875419139862,
-        //     0.11687695235013962,
-        //     0.13648289442062378,
-        //     0.08197974413633347,
-        //     0.08830064535140991,
-        //     0.06494080275297165,
-        //     0.11067444831132889,
-        //     0.08494079858064651,
-        //     0.0581822469830513,
-        //     0.0788130983710289,
-        //     0.15960593521595,
-        //     0.1726105958223343,
-        //     0.1731230467557907,
-        //     0.17755140364170074,
-        //     0.10822584480047226,
-        //     0.06687694787979126,
-        //     0.15505920350551605,
-        //     0.08988160640001297,
-        //     0.09181775152683258,
-        //     0.05936914682388306,
-        //     0.08830064535140991,
-        //     0.16375389695167542,
-        //     0.13766978681087494,
-        //     0.07999999821186066,
-        //     0.08130529522895813,
-        //     0.15738940238952637,
-        //     0.18738940358161926,
-        //     0.19312304258346558,
-        //     0.12703894078731537,
-        //     0.1594875454902649,
-        //     0.09051245450973511,
-        //     0.05687694996595383,
-        //     0.15818224847316742,
-        //     0.13442835211753845,
-        //     0.1070389375090599,
-        //     0.1459704339504242,
-        //     0.1594875454902649,
-        //     0.10687694698572159,
-        //     0.1650591939687729,
-        //     0.12209814041852951,
-        //     0.1599999964237213,
-        //     0.17766979336738586,
-        //     0.10585203766822815,
-        //     0.14324145019054413,
-        //     0.1768769472837448,
-        //     0.11442834883928299,
-        //     0.12999999523162842,
-        //     0.16750779747962952,
-        //     0.08454674482345581,
-        //     0.1558520346879959,
-        //     0.0713052973151207,
-        //     0.14000000059604645,
-        //     0.13375389575958252,
-        //     0.11818224936723709,
-        //     0.15687695145606995,
-        //     0.10557164996862411,
-        //     0.10932555794715881,
-        //     0.1481822431087494,
-        //     0.16636449098587036,
-        //     0.08557165414094925,
-        //     0.05391589179635048,
-        //     0.13261058926582336,
-        //     0.0844283476471901,
-        //     0.11209814250469208,
-        //     0.10636449605226517,
-        //     0.11324144899845123,
-        //     0.12636449933052063,
-        //     0.07414796203374863,
-        //     0.12557165324687958,
-        //     0.07624609768390656,
-        //     0.07715733349323273,
-        //     0.07569004595279694,
-        //     0.12324144691228867,
-        //     0.10130529850721359,
-        //     0.1313052922487259,
-        //     0.15000000596046448,
-        //     0.061817754060029984,
-        //     0.04442834481596947,
-        //     0.10193614661693573,
-        //     0.10557164996862411,
-        //     0.07533486187458038,
-        //     0.05834423750638962,
-        //     0.04964953660964966,
-        //     0.10312304645776749,
-        //     0.13505919277668,
-        //     0.11142369359731674,
-        //     0.1276697963476181,
-        //     0.1257336437702179,
-        //     0.13079284131526947,
-        //     0.13948754966259003,
-        //     0.12272898852825165,
-        //     0.09142369031906128,
-        //     0.07857630401849747,
-        //     0.052610594779253006,
-        //     0.0623302087187767,
-        //     0.11244860291481018,
-        //     0.0750591978430748,
-        //     0.06403429061174393,
-        //     0.09557165205478668,
-        //     0.08869470655918121,
-        //     0.07494080066680908,
-        //     0.0660841092467308,
-        //     0.03573364391922951,
-        //     0.08079284429550171,
-        //     0.10818224400281906,
-        //     0.09442834556102753,
-        //     0.0623302087187767,
-        //     0.05233020707964897,
-        //     0.07296106219291687,
-        //     0.07999999821186066,
-        //     0.0881822481751442,
-        //     0.07755139470100403,
-        //     0.04869470372796059,
-        //     0.08687695115804672,
-        //     0.0844283476471901,
-        //     0.07624609768390656,
-        //     0.09000000357627869,
-        //     0.10000000149011612,
-        //     0.07999999821186066,
-        //     0.04818224906921387,
-        //     0.028182247653603554,
-        //     0.027551395818591118,
-        //     0.03130529820919037,
-        //     0.03130529820919037
-        //   ],
-        //   "precip": [
-        //     0.18005371,
-        //     0.11999512,
-        //     0,
-        //     0.6899414,
-        //     0.14001465,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0.17004395,
-        //     0.02999878,
-        //     0.010002136,
-        //     0.77001953,
-        //     0.5097656,
-        //     0,
-        //     0,
-        //     0.5498047,
-        //     0.11999512,
-        //     0.08001709,
-        //     0,
-        //     0,
-        //     0,
-        //     0.29003906,
-        //     0,
-        //     0.3701172,
-        //     0,
-        //     0.19995117,
-        //     0,
-        //     0.11999512,
-        //     0,
-        //     0.6699219,
-        //     0.17004395,
-        //     0,
-        //     0.099975586,
-        //     0.05999756,
-        //     0.95996094,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0.010002136,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0.16003418,
-        //     0.15002441,
-        //     0.11999512,
-        //     0.040008545,
-        //     0,
-        //     0,
-        //     1.3603516,
-        //     0.5498047,
-        //     0.08001709,
-        //     0.020004272,
-        //     0.16003418,
-        //     0,
-        //     0.11999512,
-        //     0.19995117,
-        //     1.6396484,
-        //     0.47998047,
-        //     0.11999512,
-        //     0.25,
-        //     0.20996094,
-        //     0.18005371,
-        //     0,
-        //     0.049987793,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0.020004272,
-        //     0,
-        //     0,
-        //     0,
-        //     0.27001953,
-        //     0.040008545,
-        //     0,
-        //     0,
-        //     0.090026855,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0.049987793,
-        //     0,
-        //     0,
-        //     0.040008545,
-        //     0.14001465,
-        //     0.099975586,
-        //     0.10998535,
-        //     0.10998535,
-        //     0,
-        //     0.05999756,
-        //     0.91015625,
-        //     0,
-        //     0.6899414,
-        //     0,
-        //     0.42993164,
-        //     0.02999878,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     1.0703125,
-        //     0.32006836,
-        //     0.45996094,
-        //     0.049987793,
-        //     1.3798828,
-        //     0,
-        //     0,
-        //     0,
-        //     1.0302734,
-        //     0.32006836,
-        //     0.08001709,
-        //     0,
-        //     0,
-        //     0,
-        //     0.75,
-        //     0,
-        //     0.10998535,
-        //     1.7099609,
-        //     0.11999512,
-        //     0.040008545,
-        //     0.7402344,
-        //     0.05999756,
-        //     0.05999756,
-        //     0.08001709,
-        //     0.14001465,
-        //     0,
-        //     0,
-        //     0.32006836,
-        //     0.010002136,
-        //     0,
-        //     0.020004272,
-        //     0.23999023,
-        //     0.070007324,
-        //     0.010002136,
-        //     0.3100586,
-        //     0,
-        //     0.8198242,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     1.5302734,
-        //     1.6796875,
-        //     0,
-        //     0.48999023,
-        //     0.75,
-        //     0.3100586,
-        //     0,
-        //     0.4699707,
-        //     0,
-        //     0.95996094,
-        //     0.099975586,
-        //     0.090026855,
-        //     0.5698242,
-        //     0,
-        //     1.3496094,
-        //     0.9301758,
-        //     0.020004272,
-        //     0.099975586,
-        //     0,
-        //     0,
-        //     0,
-        //     0.36010742,
-        //     0.090026855,
-        //     0.13000488,
-        //     0,
-        //     0.23999023,
-        //     0.4099121,
-        //     0.10998535,
-        //     0,
-        //     0,
-        //     0.02999878,
-        //     0.020004272,
-        //     0,
-        //     0,
-        //     0,
-        //     0.5698242,
-        //     0,
-        //     0.23999023,
-        //     0.099975586,
-        //     0,
-        //     0.17004395,
-        //     0.099975586,
-        //     0,
-        //     0,
-        //     0,
-        //     0.35009766,
-        //     0,
-        //     0.02999878,
-        //     0,
-        //     0,
-        //     0,
-        //     0.02999878,
-        //     0.049987793,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0,
-        //     0.020004272,
-        //     1.3496094,
-        //     0.6298828,
-        //     0.3400000000000001,
-        //     0,
-        //     0
-        //   ],
-        //   "fcstLength": 3
-        // };
     }
 
     const PLANTED_INDICATOR_OPTIONS = {
@@ -2670,7 +4558,6 @@ var app = (function () {
     }
     function addLocationToStorage(currLocs, newLoc) {
         let newLocs = null;
-        console.log('ADDING TO STORAGE');
         if (currLocs) {
             const latMatch = findKey(currLocs, newLoc.lat);
             const lonMatch = findKey(currLocs, newLoc.lon);
@@ -2709,14 +4596,7 @@ var app = (function () {
         setStorage(OPTIONS_KEY, options);
     }
 
-    // Clamp date between 3/1 and 10/31
     let todayDate = new Date();
-    if (todayDate.getMonth() > 9) {
-        todayDate = new Date(todayDate.getFullYear(), 9, 31);
-    }
-    else if (todayDate.getMonth() < 2) {
-        todayDate = new Date(todayDate.getFullYear() - 1, 9, 31);
-    }
     const endDate = todayDate.toISOString().slice(0, 10);
     // Handle showing loading screen
     const isLoadingLocation = writable(false);
@@ -2758,8 +4638,6 @@ var app = (function () {
             newSC = await getSoilCharacteristics($activeLocation);
             let newUO = null;
             const loaded = loadOptions();
-            console.log(70, JSON.stringify(loaded), newSC, $activeLocation);
-            console.log(71, loaded ? Object.keys(loaded).includes($activeLocation.id) : null);
             if (loaded && Object.keys(loaded).includes($activeLocation.id)) {
                 newUO = loaded[$activeLocation.id];
             }
@@ -38284,7 +40162,7 @@ var app = (function () {
 
     /* src/components/locationPicker/LocationPicker.svelte generated by Svelte v3.59.2 */
 
-    const { Object: Object_1$4, console: console_1$1 } = globals;
+    const { Object: Object_1$4, console: console_1 } = globals;
     const file$m = "src/components/locationPicker/LocationPicker.svelte";
 
     function get_each_context$4(ctx, list, i) {
@@ -39368,7 +41246,7 @@ var app = (function () {
     	const writable_props = [];
 
     	Object_1$4.keys($$props).forEach(key => {
-    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1$1.warn(`<LocationPicker> was created with unknown prop '${key}'`);
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1.warn(`<LocationPicker> was created with unknown prop '${key}'`);
     	});
 
     	const func = loc => handleMarkerClick(loc.id);
@@ -61822,7 +63700,7 @@ var app = (function () {
 		: ''}`,
     		helperProps: { persistent: true },
     		type: "date",
-    		input$min: `${endDate.slice(0, 4)}-03-01`,
+    		input$min: `${parseInt(endDate.slice(0, 4)) - 1}-01-01`,
     		input$max: endDate
     	};
 
@@ -61921,9 +63799,9 @@ var app = (function () {
     			t3 = space();
     			create_component(button1.$$.fragment);
     			attr_dev(div0, "class", "org-inputs svelte-1ejj4ga");
-    			add_location(div0, file$3, 108, 6, 3403);
+    			add_location(div0, file$3, 108, 6, 3417);
     			attr_dev(div1, "class", "btns-container svelte-1ejj4ga");
-    			add_location(div1, file$3, 128, 6, 4049);
+    			add_location(div1, file$3, 128, 6, 4063);
     		},
     		m: function mount(target, anchor) {
     			mount_component(shapedtextfield0, target, anchor);
@@ -63143,7 +65021,7 @@ var app = (function () {
 		: ''}`,
     		helperProps: { persistent: true },
     		type: "date",
-    		input$min: `${endDate.slice(0, 4)}-03-01`,
+    		input$min: `${parseInt(endDate.slice(0, 4)) - 1}-01-01`,
     		input$max: endDate
     	};
 
@@ -63326,11 +65204,11 @@ var app = (function () {
     			t6 = space();
     			create_component(button1.$$.fragment);
     			attr_dev(div0, "class", "org-inputs svelte-ik9a4o");
-    			add_location(div0, file$2, 133, 8, 4153);
+    			add_location(div0, file$2, 133, 8, 4167);
     			attr_dev(div1, "class", "n-inputs svelte-ik9a4o");
-    			add_location(div1, file$2, 132, 6, 4122);
+    			add_location(div1, file$2, 132, 6, 4136);
     			attr_dev(div2, "class", "btns-container svelte-ik9a4o");
-    			add_location(div2, file$2, 176, 6, 5593);
+    			add_location(div2, file$2, 176, 6, 5607);
     		},
     		m: function mount(target, anchor) {
     			mount_component(shapedtextfield0, target, anchor);
@@ -63951,25 +65829,25 @@ var app = (function () {
 
     function get_each_context(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[20] = list[i];
-    	child_ctx[21] = list;
-    	child_ctx[22] = i;
+    	child_ctx[24] = list[i];
+    	child_ctx[25] = list;
+    	child_ctx[26] = i;
     	return child_ctx;
     }
 
     function get_each_context_1(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[23] = list[i];
-    	child_ctx[24] = list;
-    	child_ctx[25] = i;
+    	child_ctx[27] = list[i];
+    	child_ctx[28] = list;
+    	child_ctx[29] = i;
     	return child_ctx;
     }
 
     function get_each_context_2(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[26] = list[i];
-    	child_ctx[27] = list;
-    	child_ctx[28] = i;
+    	child_ctx[30] = list[i];
+    	child_ctx[31] = list;
+    	child_ctx[32] = i;
     	return child_ctx;
     }
 
@@ -64035,21 +65913,21 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const optionscontainer0_changes = {};
 
-    			if (dirty & /*$$scope, localDevOptions, $devOptions, localUserOptions, $userOptions, $soilCharacteristics*/ 536870943) {
+    			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions, $soilCharacteristics*/ 31 | dirty[1] & /*$$scope*/ 4) {
     				optionscontainer0_changes.$$scope = { dirty, ctx };
     			}
 
     			optionscontainer0.$set(optionscontainer0_changes);
     			const optionscontainer1_changes = {};
 
-    			if (dirty & /*$$scope*/ 536870912) {
+    			if (dirty[1] & /*$$scope*/ 4) {
     				optionscontainer1_changes.$$scope = { dirty, ctx };
     			}
 
     			optionscontainer1.$set(optionscontainer1_changes);
     			const optionscontainer2_changes = {};
 
-    			if (dirty & /*$$scope*/ 536870912) {
+    			if (dirty[1] & /*$$scope*/ 4) {
     				optionscontainer2_changes.$$scope = { dirty, ctx };
     			}
 
@@ -64162,7 +66040,7 @@ var app = (function () {
     	let shapedtextfield0_props = {
     		highlight: /*localUserOptions*/ ctx[3].initialOrganicMatter !== /*$userOptions*/ ctx[1].initialOrganicMatter,
     		label: "Initial Organic Matter",
-    		helperText: "Percent organic matter in the soil on 3/1, default for this location is " + /*$soilCharacteristics*/ ctx[4].organicMatter + "%",
+    		helperText: "Percent organic matter in the soil on 1/1, default for this location is " + /*$soilCharacteristics*/ ctx[4].organicMatter + "%",
     		helperProps: { persistent: true },
     		suffix: "%",
     		type: "number",
@@ -64191,7 +66069,7 @@ var app = (function () {
     		helperText: "Date the tomatoes were planted",
     		helperProps: { persistent: true },
     		type: "date",
-    		input$min: `${endDate.slice(0, 4)}-03-01`,
+    		input$min: `${parseInt(endDate.slice(0, 4)) - 1}-01-01`,
     		input$max: endDate
     	};
 
@@ -64261,7 +66139,7 @@ var app = (function () {
     			attr_dev(div0, "class", "other-vars svelte-z75n2m");
     			add_location(div0, file$1, 48, 8, 1480);
     			set_style(div1, "margin-top", "24px");
-    			add_location(div1, file$1, 90, 8, 3504);
+    			add_location(div1, file$1, 90, 8, 3518);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div0, anchor);
@@ -64279,10 +66157,10 @@ var app = (function () {
     		},
     		p: function update(ctx, dirty) {
     			const shapedselect_changes = {};
-    			if (dirty & /*localUserOptions, $userOptions*/ 10) shapedselect_changes.highlight = /*localUserOptions*/ ctx[3].waterCapacity !== /*$userOptions*/ ctx[1].waterCapacity;
-    			if (dirty & /*$soilCharacteristics*/ 16) shapedselect_changes.helperText = "\"" + /*waterCapacityOptions*/ ctx[6].find(/*func*/ ctx[7]).name + "\" is recommended: Sand-" + /*$soilCharacteristics*/ ctx[4].composition.sand + "% Silt-" + /*$soilCharacteristics*/ ctx[4].composition.silt + "% Clay-" + /*$soilCharacteristics*/ ctx[4].composition.clay + "%";
+    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedselect_changes.highlight = /*localUserOptions*/ ctx[3].waterCapacity !== /*$userOptions*/ ctx[1].waterCapacity;
+    			if (dirty[0] & /*$soilCharacteristics*/ 16) shapedselect_changes.helperText = "\"" + /*waterCapacityOptions*/ ctx[6].find(/*func*/ ctx[7]).name + "\" is recommended: Sand-" + /*$soilCharacteristics*/ ctx[4].composition.sand + "% Silt-" + /*$soilCharacteristics*/ ctx[4].composition.silt + "% Clay-" + /*$soilCharacteristics*/ ctx[4].composition.clay + "%";
 
-    			if (!updating_value && dirty & /*localUserOptions*/ 8) {
+    			if (!updating_value && dirty[0] & /*localUserOptions*/ 8) {
     				updating_value = true;
     				shapedselect_changes.value = /*localUserOptions*/ ctx[3].waterCapacity;
     				add_flush_callback(() => updating_value = false);
@@ -64290,10 +66168,10 @@ var app = (function () {
 
     			shapedselect.$set(shapedselect_changes);
     			const shapedtextfield0_changes = {};
-    			if (dirty & /*localUserOptions, $userOptions*/ 10) shapedtextfield0_changes.highlight = /*localUserOptions*/ ctx[3].initialOrganicMatter !== /*$userOptions*/ ctx[1].initialOrganicMatter;
-    			if (dirty & /*$soilCharacteristics*/ 16) shapedtextfield0_changes.helperText = "Percent organic matter in the soil on 3/1, default for this location is " + /*$soilCharacteristics*/ ctx[4].organicMatter + "%";
+    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield0_changes.highlight = /*localUserOptions*/ ctx[3].initialOrganicMatter !== /*$userOptions*/ ctx[1].initialOrganicMatter;
+    			if (dirty[0] & /*$soilCharacteristics*/ 16) shapedtextfield0_changes.helperText = "Percent organic matter in the soil on 1/1, default for this location is " + /*$soilCharacteristics*/ ctx[4].organicMatter + "%";
 
-    			if (!updating_value_1 && dirty & /*localUserOptions*/ 8) {
+    			if (!updating_value_1 && dirty[0] & /*localUserOptions*/ 8) {
     				updating_value_1 = true;
     				shapedtextfield0_changes.value = /*localUserOptions*/ ctx[3].initialOrganicMatter;
     				add_flush_callback(() => updating_value_1 = false);
@@ -64301,9 +66179,9 @@ var app = (function () {
 
     			shapedtextfield0.$set(shapedtextfield0_changes);
     			const shapedtextfield1_changes = {};
-    			if (dirty & /*localUserOptions, $userOptions*/ 10) shapedtextfield1_changes.highlight = /*localUserOptions*/ ctx[3].plantingDate !== /*$userOptions*/ ctx[1].plantingDate;
+    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield1_changes.highlight = /*localUserOptions*/ ctx[3].plantingDate !== /*$userOptions*/ ctx[1].plantingDate;
 
-    			if (!updating_value_2 && dirty & /*localUserOptions*/ 8) {
+    			if (!updating_value_2 && dirty[0] & /*localUserOptions*/ 8) {
     				updating_value_2 = true;
     				shapedtextfield1_changes.value = /*localUserOptions*/ ctx[3].plantingDate;
     				add_flush_callback(() => updating_value_2 = false);
@@ -64311,11 +66189,11 @@ var app = (function () {
 
     			shapedtextfield1.$set(shapedtextfield1_changes);
     			const shapedtextfield2_changes = {};
-    			if (dirty & /*localUserOptions, $userOptions*/ 10) shapedtextfield2_changes.highlight = /*localUserOptions*/ ctx[3].terminationDate !== /*$userOptions*/ ctx[1].terminationDate;
-    			if (dirty & /*localUserOptions*/ 8) shapedtextfield2_changes.disabled = !/*localUserOptions*/ ctx[3].plantingDate;
-    			if (dirty & /*localUserOptions*/ 8) shapedtextfield2_changes.input$min = /*localUserOptions*/ ctx[3].plantingDate;
+    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield2_changes.highlight = /*localUserOptions*/ ctx[3].terminationDate !== /*$userOptions*/ ctx[1].terminationDate;
+    			if (dirty[0] & /*localUserOptions*/ 8) shapedtextfield2_changes.disabled = !/*localUserOptions*/ ctx[3].plantingDate;
+    			if (dirty[0] & /*localUserOptions*/ 8) shapedtextfield2_changes.input$min = /*localUserOptions*/ ctx[3].plantingDate;
 
-    			if (!updating_value_3 && dirty & /*localUserOptions*/ 8) {
+    			if (!updating_value_3 && dirty[0] & /*localUserOptions*/ 8) {
     				updating_value_3 = true;
     				shapedtextfield2_changes.value = /*localUserOptions*/ ctx[3].terminationDate;
     				add_flush_callback(() => updating_value_3 = false);
@@ -64323,9 +66201,9 @@ var app = (function () {
 
     			shapedtextfield2.$set(shapedtextfield2_changes);
     			const button_changes = {};
-    			if (dirty & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15) button_changes.disabled = JSON.stringify(/*localDevOptions*/ ctx[2]) === JSON.stringify(/*$devOptions*/ ctx[0]) && JSON.stringify(/*localUserOptions*/ ctx[3]) === JSON.stringify(/*$userOptions*/ ctx[1]);
+    			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15) button_changes.disabled = JSON.stringify(/*localDevOptions*/ ctx[2]) === JSON.stringify(/*$devOptions*/ ctx[0]) && JSON.stringify(/*localUserOptions*/ ctx[3]) === JSON.stringify(/*$userOptions*/ ctx[1]);
 
-    			if (dirty & /*$$scope*/ 536870912) {
+    			if (dirty[1] & /*$$scope*/ 4) {
     				button_changes.$$scope = { dirty, ctx };
     			}
 
@@ -64470,7 +66348,7 @@ var app = (function () {
     			create_component(optionscontainer.$$.fragment);
     			set_style(div, "width", "925px");
     			set_style(div, "margin", "0 auto");
-    			add_location(div, file$1, 106, 4, 4282);
+    			add_location(div, file$1, 106, 4, 4296);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -64480,7 +66358,7 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const optionscontainer_changes = {};
 
-    			if (dirty & /*$$scope, localDevOptions, $devOptions, localUserOptions, $userOptions*/ 536870927) {
+    			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15 | dirty[1] & /*$$scope*/ 4) {
     				optionscontainer_changes.$$scope = { dirty, ctx };
     			}
 
@@ -64512,7 +66390,7 @@ var app = (function () {
     	return block;
     }
 
-    // (118:16) {:else}
+    // (167:16) {:else}
     function create_else_block(ctx) {
     	let div;
     	let shapedtextfield;
@@ -64522,19 +66400,19 @@ var app = (function () {
     	let current;
 
     	function shapedtextfield_value_binding(value) {
-    		/*shapedtextfield_value_binding*/ ctx[13](value, /*col*/ ctx[26], /*row*/ ctx[23]);
+    		/*shapedtextfield_value_binding*/ ctx[17](value, /*col*/ ctx[30], /*row*/ ctx[27]);
     	}
 
     	let shapedtextfield_props = {
-    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]],
+    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]],
     		type: "number",
     		input$step: "0.01",
     		input$min: "0",
     		width: "115"
     	};
 
-    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]] !== void 0) {
-    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]];
+    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]] !== void 0) {
+    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]];
     	}
 
     	shapedtextfield = new ShapedTextfield({
@@ -64550,11 +66428,11 @@ var app = (function () {
     			create_component(shapedtextfield.$$.fragment);
     			t = space();
 
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[26] === /*$userOptions*/ ctx[1].waterCapacity
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[30] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'highlighted'
     			: '') + " svelte-z75n2m"));
 
-    			add_location(div, file$1, 118, 18, 5045);
+    			add_location(div, file$1, 167, 18, 6901);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -64565,17 +66443,17 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
     			const shapedtextfield_changes = {};
-    			if (dirty & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]];
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]];
 
-    			if (!updating_value && dirty & /*localDevOptions*/ 4) {
+    			if (!updating_value && dirty[0] & /*localDevOptions*/ 4) {
     				updating_value = true;
-    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[26]][/*row*/ ctx[23]];
+    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]];
     				add_flush_callback(() => updating_value = false);
     			}
 
     			shapedtextfield.$set(shapedtextfield_changes);
 
-    			if (!current || dirty & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[26] === /*$userOptions*/ ctx[1].waterCapacity
+    			if (!current || dirty[0] & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[30] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'highlighted'
     			: '') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
@@ -64600,14 +66478,14 @@ var app = (function () {
     		block,
     		id: create_else_block.name,
     		type: "else",
-    		source: "(118:16) {:else}",
+    		source: "(167:16) {:else}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (116:37) 
+    // (165:37) 
     function create_if_block_2(ctx) {
     	let div;
     	let t_value = /*waterCapacityOptions*/ ctx[6].find(func_1).name + "";
@@ -64615,7 +66493,7 @@ var app = (function () {
     	let div_class_value;
 
     	function func_1(...args) {
-    		return /*func_1*/ ctx[12](/*col*/ ctx[26], ...args);
+    		return /*func_1*/ ctx[16](/*col*/ ctx[30], ...args);
     	}
 
     	const block = {
@@ -64623,11 +66501,11 @@ var app = (function () {
     			div = element("div");
     			t = text(t_value);
 
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[26] === /*$userOptions*/ ctx[1].waterCapacity
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[30] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'header highlighted'
     			: 'header') + " svelte-z75n2m"));
 
-    			add_location(div, file$1, 116, 18, 4856);
+    			add_location(div, file$1, 165, 18, 6712);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -64636,7 +66514,7 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
 
-    			if (dirty & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[26] === /*$userOptions*/ ctx[1].waterCapacity
+    			if (dirty[0] & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[30] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'header highlighted'
     			: 'header') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
@@ -64653,14 +66531,14 @@ var app = (function () {
     		block,
     		id: create_if_block_2.name,
     		type: "if",
-    		source: "(116:37) ",
+    		source: "(165:37) ",
     		ctx
     	});
 
     	return block;
     }
 
-    // (114:16) {#if col === 'constName'}
+    // (163:16) {#if col === 'constName'}
     function create_if_block_1$1(ctx) {
     	let div;
     	let t;
@@ -64668,10 +66546,10 @@ var app = (function () {
     	const block = {
     		c: function create() {
     			div = element("div");
-    			t = text(/*row*/ ctx[23]);
+    			t = text(/*row*/ ctx[27]);
     			attr_dev(div, "class", "header svelte-z75n2m");
     			set_style(div, "height", "24px");
-    			add_location(div, file$1, 114, 18, 4746);
+    			add_location(div, file$1, 163, 18, 6602);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -64689,14 +66567,14 @@ var app = (function () {
     		block,
     		id: create_if_block_1$1.name,
     		type: "if",
-    		source: "(114:16) {#if col === 'constName'}",
+    		source: "(163:16) {#if col === 'constName'}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (113:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}
+    // (162:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}
     function create_each_block_2(key_1, ctx) {
     	let first;
     	let current_block_type_index;
@@ -64707,8 +66585,8 @@ var app = (function () {
     	const if_blocks = [];
 
     	function select_block_type(ctx, dirty) {
-    		if (/*col*/ ctx[26] === 'constName') return 0;
-    		if (/*row*/ ctx[23] === '') return 1;
+    		if (/*col*/ ctx[30] === 'constName') return 0;
+    		if (/*row*/ ctx[27] === '') return 1;
     		return 2;
     	}
 
@@ -64754,14 +66632,14 @@ var app = (function () {
     		block,
     		id: create_each_block_2.name,
     		type: "each",
-    		source: "(113:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}",
+    		source: "(162:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (112:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}
+    // (161:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}
     function create_each_block_1(ctx) {
     	let each_blocks = [];
     	let each_1_lookup = new Map();
@@ -64769,7 +66647,7 @@ var app = (function () {
     	let current;
     	let each_value_2 = ['constName', 'low', 'medium', 'high'];
     	validate_each_argument(each_value_2);
-    	const get_key = ctx => `${/*col*/ ctx[26]}-${/*row*/ ctx[23]}`;
+    	const get_key = ctx => `${/*col*/ ctx[30]}-${/*row*/ ctx[27]}`;
     	validate_each_keys(ctx, each_value_2, get_each_context_2, get_key);
 
     	for (let i = 0; i < 4; i += 1) {
@@ -64797,7 +66675,7 @@ var app = (function () {
     			current = true;
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*$userOptions, waterCapacityOptions, localDevOptions, $devOptions*/ 71) {
+    			if (dirty[0] & /*$userOptions, waterCapacityOptions, localDevOptions, $devOptions*/ 71) {
     				each_value_2 = ['constName', 'low', 'medium', 'high'];
     				validate_each_argument(each_value_2);
     				group_outros();
@@ -64835,14 +66713,14 @@ var app = (function () {
     		block,
     		id: create_each_block_1.name,
     		type: "each",
-    		source: "(112:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}",
+    		source: "(161:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (137:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}
+    // (186:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}
     function create_each_block(key_1, ctx) {
     	let div;
     	let shapedtextfield;
@@ -64852,21 +66730,21 @@ var app = (function () {
     	let current;
 
     	function shapedtextfield_value_binding_1(value) {
-    		/*shapedtextfield_value_binding_1*/ ctx[14](value, /*kcConst*/ ctx[20]);
+    		/*shapedtextfield_value_binding_1*/ ctx[18](value, /*kcConst*/ ctx[24]);
     	}
 
     	let shapedtextfield_props = {
-    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value,
-    		label: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].name,
-    		helperText: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].description,
+    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value,
+    		label: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].name,
+    		helperText: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].description,
     		helperProps: { persistent: true },
     		type: "number",
-    		input$step: /*kcConst*/ ctx[20].slice(0, 1) === 'K' ? '0.01' : '1',
+    		input$step: /*kcConst*/ ctx[24].slice(0, 1) === 'K' ? '0.01' : '1',
     		input$min: "0"
     	};
 
-    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value !== void 0) {
-    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value;
+    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value !== void 0) {
+    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value;
     	}
 
     	shapedtextfield = new ShapedTextfield({
@@ -64883,8 +66761,8 @@ var app = (function () {
     			div = element("div");
     			create_component(shapedtextfield.$$.fragment);
     			t = space();
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[20] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"));
-    			add_location(div, file$1, 137, 14, 5848);
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[24] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"));
+    			add_location(div, file$1, 186, 14, 7704);
     			this.first = div;
     		},
     		m: function mount(target, anchor) {
@@ -64896,20 +66774,20 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
     			const shapedtextfield_changes = {};
-    			if (dirty & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value;
-    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.label = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].name;
-    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.helperText = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].description;
-    			if (dirty & /*localDevOptions*/ 4) shapedtextfield_changes.input$step = /*kcConst*/ ctx[20].slice(0, 1) === 'K' ? '0.01' : '1';
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value;
+    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.label = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].name;
+    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.helperText = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].description;
+    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.input$step = /*kcConst*/ ctx[24].slice(0, 1) === 'K' ? '0.01' : '1';
 
-    			if (!updating_value && dirty & /*localDevOptions, Object*/ 4) {
+    			if (!updating_value && dirty[0] & /*localDevOptions*/ 4) {
     				updating_value = true;
-    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[20]].value;
+    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value;
     				add_flush_callback(() => updating_value = false);
     			}
 
     			shapedtextfield.$set(shapedtextfield_changes);
 
-    			if (!current || dirty & /*localDevOptions*/ 4 && div_class_value !== (div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[20] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"))) {
+    			if (!current || dirty[0] & /*localDevOptions*/ 4 && div_class_value !== (div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[24] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
     			}
     		},
@@ -64932,14 +66810,14 @@ var app = (function () {
     		block,
     		id: create_each_block.name,
     		type: "each",
-    		source: "(137:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}",
+    		source: "(186:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (182:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
+    // (231:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
     function create_default_slot_1(ctx) {
     	let t;
 
@@ -64959,7 +66837,7 @@ var app = (function () {
     		block,
     		id: create_default_slot_1.name,
     		type: "slot",
-    		source: "(182:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
+    		source: "(231:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
     		ctx
     	});
 
@@ -64972,27 +66850,147 @@ var app = (function () {
     	let h40;
     	let t1;
     	let div0;
-    	let t2;
-    	let div3;
-    	let h41;
-    	let t4;
-    	let div2;
-    	let each_blocks = [];
-    	let each1_lookup = new Map();
-    	let t5;
-    	let div5;
-    	let h42;
-    	let t7;
-    	let div4;
     	let shapedtextfield0;
     	let updating_value;
-    	let t8;
+    	let t2;
     	let shapedtextfield1;
     	let updating_value_1;
-    	let t9;
+    	let t3;
+    	let shapedtextfield2;
+    	let updating_value_2;
+    	let t4;
+    	let shapedtextfield3;
+    	let updating_value_3;
+    	let t5;
+    	let div3;
+    	let h41;
+    	let t7;
+    	let div2;
+    	let t8;
+    	let div5;
+    	let h42;
+    	let t10;
+    	let div4;
+    	let each_blocks = [];
+    	let each1_lookup = new Map();
+    	let t11;
+    	let div7;
+    	let h43;
+    	let t13;
     	let div6;
+    	let shapedtextfield4;
+    	let updating_value_4;
+    	let t14;
+    	let shapedtextfield5;
+    	let updating_value_5;
+    	let t15;
+    	let div8;
     	let button;
     	let current;
+
+    	function shapedtextfield0_value_binding_1(value) {
+    		/*shapedtextfield0_value_binding_1*/ ctx[12](value);
+    	}
+
+    	let shapedtextfield0_props = {
+    		highlight: /*localDevOptions*/ ctx[2].somKN !== /*$devOptions*/ ctx[0].somKN,
+    		label: "SOM",
+    		helperText: "Soil Organic Matter Mineralization Rate",
+    		helperProps: { persistent: true },
+    		type: "number",
+    		input$step: "0.0000001",
+    		input$min: "0",
+    		input$max: "1"
+    	};
+
+    	if (/*localDevOptions*/ ctx[2].somKN !== void 0) {
+    		shapedtextfield0_props.value = /*localDevOptions*/ ctx[2].somKN;
+    	}
+
+    	shapedtextfield0 = new ShapedTextfield({
+    			props: shapedtextfield0_props,
+    			$$inline: true
+    		});
+
+    	binding_callbacks.push(() => bind(shapedtextfield0, 'value', shapedtextfield0_value_binding_1));
+
+    	function shapedtextfield1_value_binding_1(value) {
+    		/*shapedtextfield1_value_binding_1*/ ctx[13](value);
+    	}
+
+    	let shapedtextfield1_props = {
+    		highlight: /*localDevOptions*/ ctx[2].fastKN !== /*$devOptions*/ ctx[0].fastKN,
+    		label: "Fast",
+    		helperText: "Fast Nitrogen Mineralization Rate",
+    		helperProps: { persistent: true },
+    		type: "number",
+    		input$step: "0.0000001",
+    		input$min: "0",
+    		input$max: "1"
+    	};
+
+    	if (/*localDevOptions*/ ctx[2].fastKN !== void 0) {
+    		shapedtextfield1_props.value = /*localDevOptions*/ ctx[2].fastKN;
+    	}
+
+    	shapedtextfield1 = new ShapedTextfield({
+    			props: shapedtextfield1_props,
+    			$$inline: true
+    		});
+
+    	binding_callbacks.push(() => bind(shapedtextfield1, 'value', shapedtextfield1_value_binding_1));
+
+    	function shapedtextfield2_value_binding_1(value) {
+    		/*shapedtextfield2_value_binding_1*/ ctx[14](value);
+    	}
+
+    	let shapedtextfield2_props = {
+    		highlight: /*localDevOptions*/ ctx[2].mediumKN !== /*$devOptions*/ ctx[0].mediumKN,
+    		label: "Medium",
+    		helperText: "Medium Nitrogen Mineralization Rate",
+    		helperProps: { persistent: true },
+    		type: "number",
+    		input$step: "0.0000001",
+    		input$min: "0",
+    		input$max: "1"
+    	};
+
+    	if (/*localDevOptions*/ ctx[2].mediumKN !== void 0) {
+    		shapedtextfield2_props.value = /*localDevOptions*/ ctx[2].mediumKN;
+    	}
+
+    	shapedtextfield2 = new ShapedTextfield({
+    			props: shapedtextfield2_props,
+    			$$inline: true
+    		});
+
+    	binding_callbacks.push(() => bind(shapedtextfield2, 'value', shapedtextfield2_value_binding_1));
+
+    	function shapedtextfield3_value_binding(value) {
+    		/*shapedtextfield3_value_binding*/ ctx[15](value);
+    	}
+
+    	let shapedtextfield3_props = {
+    		highlight: /*localDevOptions*/ ctx[2].slowKN !== /*$devOptions*/ ctx[0].slowKN,
+    		label: "Slow",
+    		helperText: "Slow Nitrogen Mineralization Rate",
+    		helperProps: { persistent: true },
+    		type: "number",
+    		input$step: "0.0000001",
+    		input$min: "0",
+    		input$max: "1"
+    	};
+
+    	if (/*localDevOptions*/ ctx[2].slowKN !== void 0) {
+    		shapedtextfield3_props.value = /*localDevOptions*/ ctx[2].slowKN;
+    	}
+
+    	shapedtextfield3 = new ShapedTextfield({
+    			props: shapedtextfield3_props,
+    			$$inline: true
+    		});
+
+    	binding_callbacks.push(() => bind(shapedtextfield3, 'value', shapedtextfield3_value_binding));
 
     	let each_value_1 = [
     		'',
@@ -65016,7 +67014,7 @@ var app = (function () {
 
     	let each_value = Object.keys(/*localDevOptions*/ ctx[2].soilmoistureoptions.kc);
     	validate_each_argument(each_value);
-    	const get_key = ctx => /*kcConst*/ ctx[20];
+    	const get_key = ctx => /*kcConst*/ ctx[24];
     	validate_each_keys(ctx, each_value, get_each_context, get_key);
 
     	for (let i = 0; i < each_value.length; i += 1) {
@@ -65025,11 +67023,11 @@ var app = (function () {
     		each1_lookup.set(key, each_blocks[i] = create_each_block(key, child_ctx));
     	}
 
-    	function shapedtextfield0_value_binding_1(value) {
-    		/*shapedtextfield0_value_binding_1*/ ctx[15](value);
+    	function shapedtextfield4_value_binding(value) {
+    		/*shapedtextfield4_value_binding*/ ctx[19](value);
     	}
 
-    	let shapedtextfield0_props = {
+    	let shapedtextfield4_props = {
     		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions.p !== /*$devOptions*/ ctx[0].soilmoistureoptions.p,
     		label: "p",
     		helperText: "Fraction between field capacity and wilting to start applying water stress",
@@ -65041,21 +67039,21 @@ var app = (function () {
     	};
 
     	if (/*localDevOptions*/ ctx[2].soilmoistureoptions.p !== void 0) {
-    		shapedtextfield0_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.p;
+    		shapedtextfield4_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.p;
     	}
 
-    	shapedtextfield0 = new ShapedTextfield({
-    			props: shapedtextfield0_props,
+    	shapedtextfield4 = new ShapedTextfield({
+    			props: shapedtextfield4_props,
     			$$inline: true
     		});
 
-    	binding_callbacks.push(() => bind(shapedtextfield0, 'value', shapedtextfield0_value_binding_1));
+    	binding_callbacks.push(() => bind(shapedtextfield4, 'value', shapedtextfield4_value_binding));
 
-    	function shapedtextfield1_value_binding_1(value) {
-    		/*shapedtextfield1_value_binding_1*/ ctx[16](value);
+    	function shapedtextfield5_value_binding(value) {
+    		/*shapedtextfield5_value_binding*/ ctx[20](value);
     	}
 
-    	let shapedtextfield1_props = {
+    	let shapedtextfield5_props = {
     		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions.petAdj !== /*$devOptions*/ ctx[0].soilmoistureoptions.petAdj,
     		label: "PET Adjustment",
     		helperText: "PET adjustment to account for high tunnel environment",
@@ -65067,15 +67065,15 @@ var app = (function () {
     	};
 
     	if (/*localDevOptions*/ ctx[2].soilmoistureoptions.petAdj !== void 0) {
-    		shapedtextfield1_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.petAdj;
+    		shapedtextfield5_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.petAdj;
     	}
 
-    	shapedtextfield1 = new ShapedTextfield({
-    			props: shapedtextfield1_props,
+    	shapedtextfield5 = new ShapedTextfield({
+    			props: shapedtextfield5_props,
     			$$inline: true
     		});
 
-    	binding_callbacks.push(() => bind(shapedtextfield1, 'value', shapedtextfield1_value_binding_1));
+    	binding_callbacks.push(() => bind(shapedtextfield5, 'value', shapedtextfield5_value_binding));
 
     	button = new Button({
     			props: {
@@ -65094,91 +67092,161 @@ var app = (function () {
     		c: function create() {
     			div1 = element("div");
     			h40 = element("h4");
-    			h40.textContent = "Soil Moisture Definitions (inches)";
+    			h40.textContent = "Nitrogen Mineralization Constants";
     			t1 = space();
     			div0 = element("div");
+    			create_component(shapedtextfield0.$$.fragment);
+    			t2 = space();
+    			create_component(shapedtextfield1.$$.fragment);
+    			t3 = space();
+    			create_component(shapedtextfield2.$$.fragment);
+    			t4 = space();
+    			create_component(shapedtextfield3.$$.fragment);
+    			t5 = space();
+    			div3 = element("div");
+    			h41 = element("h4");
+    			h41.textContent = "Soil Moisture Definitions (inches)";
+    			t7 = space();
+    			div2 = element("div");
 
     			for (let i = 0; i < 6; i += 1) {
     				each_blocks_1[i].c();
     			}
 
-    			t2 = space();
-    			div3 = element("div");
-    			h41 = element("h4");
-    			h41.textContent = "Crop Coefficient Definitions";
-    			t4 = space();
-    			div2 = element("div");
+    			t8 = space();
+    			div5 = element("div");
+    			h42 = element("h4");
+    			h42.textContent = "Crop Coefficient Definitions";
+    			t10 = space();
+    			div4 = element("div");
 
     			for (let i = 0; i < each_blocks.length; i += 1) {
     				each_blocks[i].c();
     			}
 
-    			t5 = space();
-    			div5 = element("div");
-    			h42 = element("h4");
-    			h42.textContent = "Other Variables";
-    			t7 = space();
-    			div4 = element("div");
-    			create_component(shapedtextfield0.$$.fragment);
-    			t8 = space();
-    			create_component(shapedtextfield1.$$.fragment);
-    			t9 = space();
+    			t11 = space();
+    			div7 = element("div");
+    			h43 = element("h4");
+    			h43.textContent = "Other Variables";
+    			t13 = space();
     			div6 = element("div");
+    			create_component(shapedtextfield4.$$.fragment);
+    			t14 = space();
+    			create_component(shapedtextfield5.$$.fragment);
+    			t15 = space();
+    			div8 = element("div");
     			create_component(button.$$.fragment);
-    			add_location(h40, file$1, 109, 10, 4406);
-    			attr_dev(div0, "class", "smo-grid svelte-z75n2m");
-    			add_location(div0, file$1, 110, 10, 4460);
-    			add_location(div1, file$1, 108, 8, 4390);
-    			add_location(h41, file$1, 134, 10, 5671);
-    			attr_dev(div2, "class", "kc-grid svelte-z75n2m");
-    			add_location(div2, file$1, 135, 10, 5719);
-    			add_location(div3, file$1, 133, 8, 5655);
-    			add_location(h42, file$1, 153, 10, 6629);
-    			attr_dev(div4, "class", "other-vars svelte-z75n2m");
-    			add_location(div4, file$1, 154, 10, 6664);
-    			add_location(div5, file$1, 152, 8, 6613);
-    			set_style(div6, "margin-top", "24px");
-    			add_location(div6, file$1, 180, 8, 7741);
+    			add_location(h40, file$1, 109, 10, 4420);
+    			attr_dev(div0, "class", "other-vars svelte-z75n2m");
+    			add_location(div0, file$1, 110, 10, 4473);
+    			add_location(div1, file$1, 108, 8, 4404);
+    			add_location(h41, file$1, 158, 10, 6262);
+    			attr_dev(div2, "class", "smo-grid svelte-z75n2m");
+    			add_location(div2, file$1, 159, 10, 6316);
+    			add_location(div3, file$1, 157, 8, 6246);
+    			add_location(h42, file$1, 183, 10, 7527);
+    			attr_dev(div4, "class", "kc-grid svelte-z75n2m");
+    			add_location(div4, file$1, 184, 10, 7575);
+    			add_location(div5, file$1, 182, 8, 7511);
+    			add_location(h43, file$1, 202, 10, 8485);
+    			attr_dev(div6, "class", "other-vars svelte-z75n2m");
+    			add_location(div6, file$1, 203, 10, 8520);
+    			add_location(div7, file$1, 201, 8, 8469);
+    			set_style(div8, "margin-top", "24px");
+    			add_location(div8, file$1, 229, 8, 9597);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div1, anchor);
     			append_dev(div1, h40);
     			append_dev(div1, t1);
     			append_dev(div1, div0);
+    			mount_component(shapedtextfield0, div0, null);
+    			append_dev(div0, t2);
+    			mount_component(shapedtextfield1, div0, null);
+    			append_dev(div0, t3);
+    			mount_component(shapedtextfield2, div0, null);
+    			append_dev(div0, t4);
+    			mount_component(shapedtextfield3, div0, null);
+    			insert_dev(target, t5, anchor);
+    			insert_dev(target, div3, anchor);
+    			append_dev(div3, h41);
+    			append_dev(div3, t7);
+    			append_dev(div3, div2);
 
     			for (let i = 0; i < 6; i += 1) {
     				if (each_blocks_1[i]) {
-    					each_blocks_1[i].m(div0, null);
+    					each_blocks_1[i].m(div2, null);
     				}
     			}
 
-    			insert_dev(target, t2, anchor);
-    			insert_dev(target, div3, anchor);
-    			append_dev(div3, h41);
-    			append_dev(div3, t4);
-    			append_dev(div3, div2);
+    			insert_dev(target, t8, anchor);
+    			insert_dev(target, div5, anchor);
+    			append_dev(div5, h42);
+    			append_dev(div5, t10);
+    			append_dev(div5, div4);
 
     			for (let i = 0; i < each_blocks.length; i += 1) {
     				if (each_blocks[i]) {
-    					each_blocks[i].m(div2, null);
+    					each_blocks[i].m(div4, null);
     				}
     			}
 
-    			insert_dev(target, t5, anchor);
-    			insert_dev(target, div5, anchor);
-    			append_dev(div5, h42);
-    			append_dev(div5, t7);
-    			append_dev(div5, div4);
-    			mount_component(shapedtextfield0, div4, null);
-    			append_dev(div4, t8);
-    			mount_component(shapedtextfield1, div4, null);
-    			insert_dev(target, t9, anchor);
-    			insert_dev(target, div6, anchor);
-    			mount_component(button, div6, null);
+    			insert_dev(target, t11, anchor);
+    			insert_dev(target, div7, anchor);
+    			append_dev(div7, h43);
+    			append_dev(div7, t13);
+    			append_dev(div7, div6);
+    			mount_component(shapedtextfield4, div6, null);
+    			append_dev(div6, t14);
+    			mount_component(shapedtextfield5, div6, null);
+    			insert_dev(target, t15, anchor);
+    			insert_dev(target, div8, anchor);
+    			mount_component(button, div8, null);
     			current = true;
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*$userOptions, waterCapacityOptions, localDevOptions, $devOptions*/ 71) {
+    			const shapedtextfield0_changes = {};
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield0_changes.highlight = /*localDevOptions*/ ctx[2].somKN !== /*$devOptions*/ ctx[0].somKN;
+
+    			if (!updating_value && dirty[0] & /*localDevOptions*/ 4) {
+    				updating_value = true;
+    				shapedtextfield0_changes.value = /*localDevOptions*/ ctx[2].somKN;
+    				add_flush_callback(() => updating_value = false);
+    			}
+
+    			shapedtextfield0.$set(shapedtextfield0_changes);
+    			const shapedtextfield1_changes = {};
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield1_changes.highlight = /*localDevOptions*/ ctx[2].fastKN !== /*$devOptions*/ ctx[0].fastKN;
+
+    			if (!updating_value_1 && dirty[0] & /*localDevOptions*/ 4) {
+    				updating_value_1 = true;
+    				shapedtextfield1_changes.value = /*localDevOptions*/ ctx[2].fastKN;
+    				add_flush_callback(() => updating_value_1 = false);
+    			}
+
+    			shapedtextfield1.$set(shapedtextfield1_changes);
+    			const shapedtextfield2_changes = {};
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield2_changes.highlight = /*localDevOptions*/ ctx[2].mediumKN !== /*$devOptions*/ ctx[0].mediumKN;
+
+    			if (!updating_value_2 && dirty[0] & /*localDevOptions*/ 4) {
+    				updating_value_2 = true;
+    				shapedtextfield2_changes.value = /*localDevOptions*/ ctx[2].mediumKN;
+    				add_flush_callback(() => updating_value_2 = false);
+    			}
+
+    			shapedtextfield2.$set(shapedtextfield2_changes);
+    			const shapedtextfield3_changes = {};
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield3_changes.highlight = /*localDevOptions*/ ctx[2].slowKN !== /*$devOptions*/ ctx[0].slowKN;
+
+    			if (!updating_value_3 && dirty[0] & /*localDevOptions*/ 4) {
+    				updating_value_3 = true;
+    				shapedtextfield3_changes.value = /*localDevOptions*/ ctx[2].slowKN;
+    				add_flush_callback(() => updating_value_3 = false);
+    			}
+
+    			shapedtextfield3.$set(shapedtextfield3_changes);
+
+    			if (dirty[0] & /*$userOptions, waterCapacityOptions, localDevOptions, $devOptions*/ 71) {
     				each_value_1 = [
     					'',
     					'wiltingpoint',
@@ -65201,7 +67269,7 @@ var app = (function () {
     						each_blocks_1[i] = create_each_block_1(child_ctx);
     						each_blocks_1[i].c();
     						transition_in(each_blocks_1[i], 1);
-    						each_blocks_1[i].m(div0, null);
+    						each_blocks_1[i].m(div2, null);
     					}
     				}
 
@@ -65214,39 +67282,39 @@ var app = (function () {
     				check_outros();
     			}
 
-    			if (dirty & /*Object, localDevOptions, $devOptions*/ 5) {
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) {
     				each_value = Object.keys(/*localDevOptions*/ ctx[2].soilmoistureoptions.kc);
     				validate_each_argument(each_value);
     				group_outros();
     				validate_each_keys(ctx, each_value, get_each_context, get_key);
-    				each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value, each1_lookup, div2, outro_and_destroy_block, create_each_block, null, get_each_context);
+    				each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value, each1_lookup, div4, outro_and_destroy_block, create_each_block, null, get_each_context);
     				check_outros();
     			}
 
-    			const shapedtextfield0_changes = {};
-    			if (dirty & /*localDevOptions, $devOptions*/ 5) shapedtextfield0_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.p !== /*$devOptions*/ ctx[0].soilmoistureoptions.p;
+    			const shapedtextfield4_changes = {};
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield4_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.p !== /*$devOptions*/ ctx[0].soilmoistureoptions.p;
 
-    			if (!updating_value && dirty & /*localDevOptions*/ 4) {
-    				updating_value = true;
-    				shapedtextfield0_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.p;
-    				add_flush_callback(() => updating_value = false);
+    			if (!updating_value_4 && dirty[0] & /*localDevOptions*/ 4) {
+    				updating_value_4 = true;
+    				shapedtextfield4_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.p;
+    				add_flush_callback(() => updating_value_4 = false);
     			}
 
-    			shapedtextfield0.$set(shapedtextfield0_changes);
-    			const shapedtextfield1_changes = {};
-    			if (dirty & /*localDevOptions, $devOptions*/ 5) shapedtextfield1_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.petAdj !== /*$devOptions*/ ctx[0].soilmoistureoptions.petAdj;
+    			shapedtextfield4.$set(shapedtextfield4_changes);
+    			const shapedtextfield5_changes = {};
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield5_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.petAdj !== /*$devOptions*/ ctx[0].soilmoistureoptions.petAdj;
 
-    			if (!updating_value_1 && dirty & /*localDevOptions*/ 4) {
-    				updating_value_1 = true;
-    				shapedtextfield1_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.petAdj;
-    				add_flush_callback(() => updating_value_1 = false);
+    			if (!updating_value_5 && dirty[0] & /*localDevOptions*/ 4) {
+    				updating_value_5 = true;
+    				shapedtextfield5_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.petAdj;
+    				add_flush_callback(() => updating_value_5 = false);
     			}
 
-    			shapedtextfield1.$set(shapedtextfield1_changes);
+    			shapedtextfield5.$set(shapedtextfield5_changes);
     			const button_changes = {};
-    			if (dirty & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15) button_changes.disabled = JSON.stringify(/*localDevOptions*/ ctx[2]) === JSON.stringify(/*$devOptions*/ ctx[0]) && JSON.stringify(/*localUserOptions*/ ctx[3]) === JSON.stringify(/*$userOptions*/ ctx[1]);
+    			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15) button_changes.disabled = JSON.stringify(/*localDevOptions*/ ctx[2]) === JSON.stringify(/*$devOptions*/ ctx[0]) && JSON.stringify(/*localUserOptions*/ ctx[3]) === JSON.stringify(/*$userOptions*/ ctx[1]);
 
-    			if (dirty & /*$$scope*/ 536870912) {
+    			if (dirty[1] & /*$$scope*/ 4) {
     				button_changes.$$scope = { dirty, ctx };
     			}
 
@@ -65254,6 +67322,10 @@ var app = (function () {
     		},
     		i: function intro(local) {
     			if (current) return;
+    			transition_in(shapedtextfield0.$$.fragment, local);
+    			transition_in(shapedtextfield1.$$.fragment, local);
+    			transition_in(shapedtextfield2.$$.fragment, local);
+    			transition_in(shapedtextfield3.$$.fragment, local);
 
     			for (let i = 0; i < 6; i += 1) {
     				transition_in(each_blocks_1[i]);
@@ -65263,12 +67335,16 @@ var app = (function () {
     				transition_in(each_blocks[i]);
     			}
 
-    			transition_in(shapedtextfield0.$$.fragment, local);
-    			transition_in(shapedtextfield1.$$.fragment, local);
+    			transition_in(shapedtextfield4.$$.fragment, local);
+    			transition_in(shapedtextfield5.$$.fragment, local);
     			transition_in(button.$$.fragment, local);
     			current = true;
     		},
     		o: function outro(local) {
+    			transition_out(shapedtextfield0.$$.fragment, local);
+    			transition_out(shapedtextfield1.$$.fragment, local);
+    			transition_out(shapedtextfield2.$$.fragment, local);
+    			transition_out(shapedtextfield3.$$.fragment, local);
     			each_blocks_1 = each_blocks_1.filter(Boolean);
 
     			for (let i = 0; i < 6; i += 1) {
@@ -65279,27 +67355,33 @@ var app = (function () {
     				transition_out(each_blocks[i]);
     			}
 
-    			transition_out(shapedtextfield0.$$.fragment, local);
-    			transition_out(shapedtextfield1.$$.fragment, local);
+    			transition_out(shapedtextfield4.$$.fragment, local);
+    			transition_out(shapedtextfield5.$$.fragment, local);
     			transition_out(button.$$.fragment, local);
     			current = false;
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(div1);
-    			destroy_each(each_blocks_1, detaching);
-    			if (detaching) detach_dev(t2);
+    			destroy_component(shapedtextfield0);
+    			destroy_component(shapedtextfield1);
+    			destroy_component(shapedtextfield2);
+    			destroy_component(shapedtextfield3);
+    			if (detaching) detach_dev(t5);
     			if (detaching) detach_dev(div3);
+    			destroy_each(each_blocks_1, detaching);
+    			if (detaching) detach_dev(t8);
+    			if (detaching) detach_dev(div5);
 
     			for (let i = 0; i < each_blocks.length; i += 1) {
     				each_blocks[i].d();
     			}
 
-    			if (detaching) detach_dev(t5);
-    			if (detaching) detach_dev(div5);
-    			destroy_component(shapedtextfield0);
-    			destroy_component(shapedtextfield1);
-    			if (detaching) detach_dev(t9);
-    			if (detaching) detach_dev(div6);
+    			if (detaching) detach_dev(t11);
+    			if (detaching) detach_dev(div7);
+    			destroy_component(shapedtextfield4);
+    			destroy_component(shapedtextfield5);
+    			if (detaching) detach_dev(t15);
+    			if (detaching) detach_dev(div8);
     			destroy_component(button);
     		}
     	};
@@ -65341,12 +67423,12 @@ var app = (function () {
     			if (if_block1) if_block1.m(div, null);
     			current = true;
     		},
-    		p: function update(ctx, [dirty]) {
+    		p: function update(ctx, dirty) {
     			if (/*localUserOptions*/ ctx[3] && /*$soilCharacteristics*/ ctx[4]) {
     				if (if_block0) {
     					if_block0.p(ctx, dirty);
 
-    					if (dirty & /*localUserOptions, $soilCharacteristics*/ 24) {
+    					if (dirty[0] & /*localUserOptions, $soilCharacteristics*/ 24) {
     						transition_in(if_block0, 1);
     					}
     				} else {
@@ -65369,7 +67451,7 @@ var app = (function () {
     				if (if_block1) {
     					if_block1.p(ctx, dirty);
 
-    					if (dirty & /*localDevOptions, $userOptions*/ 6) {
+    					if (dirty[0] & /*localDevOptions, $userOptions*/ 6) {
     						transition_in(if_block1, 1);
     					}
     				} else {
@@ -65427,7 +67509,7 @@ var app = (function () {
     	validate_store(userOptions, 'userOptions');
     	component_subscribe($$self, userOptions, $$value => $$invalidate(1, $userOptions = $$value));
     	validate_store(activeLocationId, 'activeLocationId');
-    	component_subscribe($$self, activeLocationId, $$value => $$invalidate(17, $activeLocationId = $$value));
+    	component_subscribe($$self, activeLocationId, $$value => $$invalidate(21, $activeLocationId = $$value));
     	validate_store(soilCharacteristics, 'soilCharacteristics');
     	component_subscribe($$self, soilCharacteristics, $$value => $$invalidate(4, $soilCharacteristics = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
@@ -65503,6 +67585,34 @@ var app = (function () {
     		}
     	}
 
+    	function shapedtextfield0_value_binding_1(value) {
+    		if ($$self.$$.not_equal(localDevOptions.somKN, value)) {
+    			localDevOptions.somKN = value;
+    			$$invalidate(2, localDevOptions);
+    		}
+    	}
+
+    	function shapedtextfield1_value_binding_1(value) {
+    		if ($$self.$$.not_equal(localDevOptions.fastKN, value)) {
+    			localDevOptions.fastKN = value;
+    			$$invalidate(2, localDevOptions);
+    		}
+    	}
+
+    	function shapedtextfield2_value_binding_1(value) {
+    		if ($$self.$$.not_equal(localDevOptions.mediumKN, value)) {
+    			localDevOptions.mediumKN = value;
+    			$$invalidate(2, localDevOptions);
+    		}
+    	}
+
+    	function shapedtextfield3_value_binding(value) {
+    		if ($$self.$$.not_equal(localDevOptions.slowKN, value)) {
+    			localDevOptions.slowKN = value;
+    			$$invalidate(2, localDevOptions);
+    		}
+    	}
+
     	const func_1 = (col, wco) => wco.value === col;
 
     	function shapedtextfield_value_binding(value, col, row) {
@@ -65519,14 +67629,14 @@ var app = (function () {
     		}
     	}
 
-    	function shapedtextfield0_value_binding_1(value) {
+    	function shapedtextfield4_value_binding(value) {
     		if ($$self.$$.not_equal(localDevOptions.soilmoistureoptions.p, value)) {
     			localDevOptions.soilmoistureoptions.p = value;
     			$$invalidate(2, localDevOptions);
     		}
     	}
 
-    	function shapedtextfield1_value_binding_1(value) {
+    	function shapedtextfield5_value_binding(value) {
     		if ($$self.$$.not_equal(localDevOptions.soilmoistureoptions.petAdj, value)) {
     			localDevOptions.soilmoistureoptions.petAdj = value;
     			$$invalidate(2, localDevOptions);
@@ -65568,11 +67678,11 @@ var app = (function () {
     	}
 
     	$$self.$$.update = () => {
-    		if ($$self.$$.dirty & /*$devOptions*/ 1) {
+    		if ($$self.$$.dirty[0] & /*$devOptions*/ 1) {
     			(updateLocalDevOptions());
     		}
 
-    		if ($$self.$$.dirty & /*$userOptions*/ 2) {
+    		if ($$self.$$.dirty[0] & /*$userOptions*/ 2) {
     			(updateLocalUserOptions());
     		}
     	};
@@ -65590,18 +67700,22 @@ var app = (function () {
     		shapedtextfield0_value_binding,
     		shapedtextfield1_value_binding,
     		shapedtextfield2_value_binding,
+    		shapedtextfield0_value_binding_1,
+    		shapedtextfield1_value_binding_1,
+    		shapedtextfield2_value_binding_1,
+    		shapedtextfield3_value_binding,
     		func_1,
     		shapedtextfield_value_binding,
     		shapedtextfield_value_binding_1,
-    		shapedtextfield0_value_binding_1,
-    		shapedtextfield1_value_binding_1
+    		shapedtextfield4_value_binding,
+    		shapedtextfield5_value_binding
     	];
     }
 
     class ToolOptions extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$1, create_fragment$1, safe_not_equal, {});
+    		init(this, options, instance$1, create_fragment$1, safe_not_equal, {}, null, [-1, -1]);
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
@@ -65614,7 +67728,7 @@ var app = (function () {
 
     /* src/App.svelte generated by Svelte v3.59.2 */
 
-    const { Object: Object_1, console: console_1 } = globals;
+    const { Object: Object_1 } = globals;
 
     const file = "src/App.svelte";
 
@@ -65627,7 +67741,7 @@ var app = (function () {
     			div = element("div");
     			div.textContent = "Soil data could not be loaded for this location. Please try a different location.";
     			attr_dev(div, "class", "no-soil-data svelte-1na5kk7");
-    			add_location(div, file, 25, 2, 1014);
+    			add_location(div, file, 25, 2, 1032);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -65740,9 +67854,9 @@ var app = (function () {
     			t5 = space();
     			if (if_block) if_block.c();
     			attr_dev(h1, "class", "svelte-1na5kk7");
-    			add_location(h1, file, 15, 1, 812);
+    			add_location(h1, file, 15, 1, 830);
     			attr_dev(main, "class", "svelte-1na5kk7");
-    			add_location(main, file, 14, 0, 804);
+    			add_location(main, file, 14, 0, 822);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -65839,21 +67953,9 @@ var app = (function () {
 
     function instance($$self, $$props, $$invalidate) {
     	let $isLoadingData;
-    	let $userOptions;
-    	let $devOptions;
-    	let $nutrientData;
-    	let $waterData;
     	let $soilCharacteristics;
     	validate_store(isLoadingData, 'isLoadingData');
     	component_subscribe($$self, isLoadingData, $$value => $$invalidate(0, $isLoadingData = $$value));
-    	validate_store(userOptions, 'userOptions');
-    	component_subscribe($$self, userOptions, $$value => $$invalidate(2, $userOptions = $$value));
-    	validate_store(devOptions, 'devOptions');
-    	component_subscribe($$self, devOptions, $$value => $$invalidate(3, $devOptions = $$value));
-    	validate_store(nutrientData, 'nutrientData');
-    	component_subscribe($$self, nutrientData, $$value => $$invalidate(4, $nutrientData = $$value));
-    	validate_store(waterData, 'waterData');
-    	component_subscribe($$self, waterData, $$value => $$invalidate(5, $waterData = $$value));
     	validate_store(soilCharacteristics, 'soilCharacteristics');
     	component_subscribe($$self, soilCharacteristics, $$value => $$invalidate(1, $soilCharacteristics = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
@@ -65861,7 +67963,7 @@ var app = (function () {
     	const writable_props = [];
 
     	Object_1.keys($$props).forEach(key => {
-    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1.warn(`<App> was created with unknown prop '${key}'`);
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console.warn(`<App> was created with unknown prop '${key}'`);
     	});
 
     	$$self.$capture_state = () => ({
@@ -65877,47 +67979,10 @@ var app = (function () {
     		devOptions,
     		userOptions,
     		$isLoadingData,
-    		$userOptions,
-    		$devOptions,
-    		$nutrientData,
-    		$waterData,
     		$soilCharacteristics
     	});
 
-    	$$self.$$.update = () => {
-    		if ($$self.$$.dirty & /*$soilCharacteristics*/ 2) {
-    			console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
-    		}
-
-    		if ($$self.$$.dirty & /*$waterData*/ 32) {
-    			console.log('APP WATERDATA: ', $waterData);
-    		}
-
-    		if ($$self.$$.dirty & /*$nutrientData*/ 16) {
-    			console.log('APP NUTRIENTDATA: ', $nutrientData);
-    		}
-
-    		if ($$self.$$.dirty & /*$devOptions*/ 8) {
-    			console.log('APP DEVOPTIONS: ', $devOptions);
-    		}
-
-    		if ($$self.$$.dirty & /*$userOptions*/ 4) {
-    			console.log('APP USEROPTIONS: ', $userOptions);
-    		}
-
-    		if ($$self.$$.dirty & /*$isLoadingData*/ 1) {
-    			console.log('APP ISLOADINGDATA: ', JSON.stringify($isLoadingData, null, 2));
-    		}
-    	};
-
-    	return [
-    		$isLoadingData,
-    		$soilCharacteristics,
-    		$userOptions,
-    		$devOptions,
-    		$nutrientData,
-    		$waterData
-    	];
+    	return [$isLoadingData, $soilCharacteristics];
     }
 
     class App extends SvelteComponentDev {

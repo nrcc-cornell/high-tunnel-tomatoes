@@ -7,13 +7,7 @@ import { constructWaterChartDetails, constructNitrogenChartDetails } from '../li
 import { loadActiveLocationId, loadLocations, loadOptions } from '../lib/handleStorage';
 import type { LocationObj } from '../global';
 
-// Clamp date between 3/1 and 10/31
 let todayDate = new Date();
-if (todayDate.getMonth() > 9) {
-  todayDate = new Date(todayDate.getFullYear(), 9, 31);
-} else if (todayDate.getMonth() < 2) {
-  todayDate = new Date(todayDate.getFullYear() - 1, 9, 31);
-}
 export const endDate = todayDate.toISOString().slice(0,10);
 
 // Handle showing loading screen
@@ -68,8 +62,6 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
 
     let newUO = null;
     const loaded = loadOptions();
-    console.log(70, JSON.stringify(loaded), newSC, $activeLocation);
-    console.log(71, loaded ? Object.keys(loaded).includes($activeLocation.id) : null);
     if (loaded && Object.keys(loaded).includes($activeLocation.id)) {
       newUO = loaded[$activeLocation.id];
     } else if (newSC) {

@@ -58,7 +58,7 @@
             bind:value={localUserOptions.initialOrganicMatter}
             highlight={localUserOptions.initialOrganicMatter !== $userOptions.initialOrganicMatter}
             label='Initial Organic Matter'
-            helperText='Percent organic matter in the soil on 3/1, default for this location is {$soilCharacteristics.organicMatter}%'
+            helperText='Percent organic matter in the soil on 1/1, default for this location is {$soilCharacteristics.organicMatter}%'
             helperProps={{ persistent: true }}
             suffix='%'
             type='number'
@@ -72,7 +72,7 @@
             helperText='Date the tomatoes were planted'
             helperProps={{ persistent: true }}
             type='date'
-            input$min={`${endDate.slice(0,4)}-03-01`}
+            input$min={`${parseInt(endDate.slice(0,4)) - 1}-01-01`}
             input$max={endDate}
           />
           <ShapedTextfield
@@ -106,6 +106,55 @@
   {#if localDevOptions && $userOptions}
     <div style='width: 925px; margin: 0 auto;'>
       <OptionsContainer sectionName='Development Only'>
+        <div>
+          <h4>Nitrogen Mineralization Constants</h4>
+          <div class='other-vars'>
+            <ShapedTextfield
+              bind:value={localDevOptions.somKN}
+              highlight={localDevOptions.somKN !== $devOptions.somKN}
+              label='SOM'
+              helperText='Soil Organic Matter Mineralization Rate'
+              helperProps={{ persistent: true }}
+              type='number'
+              input$step='0.0000001'
+              input$min='0'
+              input$max='1'
+            />
+            <ShapedTextfield
+              bind:value={localDevOptions.fastKN}
+              highlight={localDevOptions.fastKN !== $devOptions.fastKN}
+              label='Fast'
+              helperText='Fast Nitrogen Mineralization Rate'
+              helperProps={{ persistent: true }}
+              type='number'
+              input$step='0.0000001'
+              input$min='0'
+              input$max='1'
+            />
+            <ShapedTextfield
+              bind:value={localDevOptions.mediumKN}
+              highlight={localDevOptions.mediumKN !== $devOptions.mediumKN}
+              label='Medium'
+              helperText='Medium Nitrogen Mineralization Rate'
+              helperProps={{ persistent: true }}
+              type='number'
+              input$step='0.0000001'
+              input$min='0'
+              input$max='1'
+            />
+            <ShapedTextfield
+              bind:value={localDevOptions.slowKN}
+              highlight={localDevOptions.slowKN !== $devOptions.slowKN}
+              label='Slow'
+              helperText='Slow Nitrogen Mineralization Rate'
+              helperProps={{ persistent: true }}
+              type='number'
+              input$step='0.0000001'
+              input$min='0'
+              input$max='1'
+            />
+          </div>
+        </div>
         <div>
           <h4>Soil Moisture Definitions (inches)</h4>
           <div class='smo-grid'>

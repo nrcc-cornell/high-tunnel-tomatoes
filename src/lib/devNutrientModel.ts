@@ -91,7 +91,11 @@ export const SOIL_DATA = {
     low: { daysToDrainToFcFromSat: 0.125 },
     medium: { daysToDrainToFcFromSat: 1.0 },
     high: { daysToDrainToFcFromSat: 2.0 },
-  }
+  },
+  somKN: 0.000083,
+  fastKN: 0.1,
+  mediumKN: 0.003,
+  slowKN: 0.0002
 };
 
 function getCropCoeff(numdays, devSD) {
@@ -218,7 +222,7 @@ function runNutrientModel(
   //  irrigationIdxs  : array of indices where the user irrigated
   //
   // -----------------------------------------------------------------------------------------
-  const soil_options = devSD.soilmoistureoptions;
+  const { soilmoistureoptions: soil_options, somKN, fastKN, mediumKN, slowKN } = devSD;
   
   // Calculate number of days since planting, negative value means current days in loop below is before planting
   let daysSincePlanting =  Math.floor(( Date.parse(plantingDate.getFullYear() + '-03-01') - plantingDate.getTime() ) / 86400000 + 1);
@@ -354,7 +358,11 @@ function runNutrientModel(
       fastN,
       mediumN,
       slowN,
-      date
+      date,
+      somKN,
+      fastKN,
+      mediumKN,
+      slowKN
     ));
 
     dd.push(deficit);

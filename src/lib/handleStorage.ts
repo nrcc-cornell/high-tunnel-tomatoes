@@ -32,7 +32,6 @@ function findKey(object, value) {
 
 function addLocationToStorage(currLocs, newLoc) {
   let newLocs = null;
-  console.log('ADDING TO STORAGE');
   if (currLocs) {
     const latMatch = findKey(currLocs, newLoc.lat);
     const lonMatch = findKey(currLocs, newLoc.lon);

@@ -1,9 +1,9 @@
 const rootDepthInches = 18;
 const rootDepthMeters = convertInToM(rootDepthInches);
-const somKN = 0.000083;
-const fastKN = 0.1;
-const mediumKN = 0.003;
-const slowKN = 0.0002;
+// const somKN = 0.000083;
+// const fastKN = 0.1;
+// const mediumKN = 0.003;
+// const slowKN = 0.0002;
 
 function convertInToM(inches: number) {
   // inches / 39.37 = meters
@@ -56,7 +56,11 @@ export default function balanceNitrogen(
   fastN: number,
   mediumN: number,
   slowN: number,
-  date: string
+  date: string,
+  somKN: number,
+  fastKN: number,
+  mediumKN: number,
+  slowKN: number
 ) {
   //  -------------------------------------------------------------
   //  Calculate soil inorganic nitrogen (lbs/acre) from daily volumetric water content, 

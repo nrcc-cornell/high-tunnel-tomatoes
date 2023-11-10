@@ -103,7 +103,7 @@
         helperText={`Date of testing${editingEvent.date === null ? ', required': ''}`}
         helperProps={{ persistent: true }}
         type='date'
-        input$min={`${endDate.slice(0,4)}-03-01`}
+        input$min={`${parseInt(endDate.slice(0,4)) - 1}-01-01`}
         input$max={endDate}
       />
       <div class='org-inputs'>

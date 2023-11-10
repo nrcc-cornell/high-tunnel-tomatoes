@@ -6,12 +6,12 @@
   import ToolOptions from "./components/options/ToolOptions.svelte";
 	import { soilCharacteristics, waterData, nutrientData, isLoadingData, devOptions, userOptions } from "./store/store";
 
-	$: console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
-	$: console.log('APP WATERDATA: ', $waterData);
-	$: console.log('APP NUTRIENTDATA: ', $nutrientData);
-	$: console.log('APP DEVOPTIONS: ', $devOptions);
-	$: console.log('APP USEROPTIONS: ', $userOptions);
-	$: console.log('APP ISLOADINGDATA: ', JSON.stringify($isLoadingData, null, 2));
+	// $: console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
+	// $: console.log('APP WATERDATA: ', $waterData);
+	// $: console.log('APP NUTRIENTDATA: ', $nutrientData);
+	// $: console.log('APP DEVOPTIONS: ', $devOptions);
+	// $: console.log('APP USEROPTIONS: ', $userOptions);
+	// $: console.log('APP ISLOADINGDATA: ', JSON.stringify($isLoadingData, null, 2));
 
 </script>
 
