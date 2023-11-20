@@ -1292,8 +1292,10 @@ var app = (function () {
         // -----------------------------------------------------------------------------------------
         const { soilmoistureoptions: soil_options, somKN, fastKN, mediumKN, slowKN } = devSD;
         // Calculate number of days since planting, negative value means current days in loop below is before planting
-        let daysSincePlanting = Math.floor((Date.parse(plantingDate.getFullYear() + '-03-01') - plantingDate.getTime()) / 86400000 + 1);
-        let daysSinceTermination = Math.floor((Date.parse(terminationDate.getFullYear() + '-03-01') - terminationDate.getTime()) / 86400000 + 1);
+        let daysSincePlanting = Math.floor((Date.parse(plantingDate.getFullYear() + '-01-01') - plantingDate.getTime()) / 86400000);
+        let daysSinceTermination = Math.floor((Date.parse(terminationDate.getFullYear() + '-01-01') - terminationDate.getTime()) / 86400000);
+        console.log(plantingDate, terminationDate);
+        console.log(daysSincePlanting, daysSinceTermination);
         // Initialize running tally of the amount of water in the soil
         let deficit = 0;
         const fc = soil_options[soilcap].fieldcapacity;
