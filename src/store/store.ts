@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import asyncDerived from '../lib/asyncDerived';
 import { getSoilCharacteristics } from '../lib/soilCharacteristics';
-import { getWaterData } from '../lib/waterData';
+import { getWeatherData } from '../lib/weatherData';
 import { handleRunNutrientModel, SOIL_DATA } from '../lib/devNutrientModel';
 import { constructWaterChartDetails, constructNitrogenChartDetails } from '../lib/chartParts';
 import { loadActiveLocationId, loadLocations, loadOptions } from '../lib/handleStorage';
@@ -13,7 +13,7 @@ export const endDate = todayDate.toISOString().slice(0,10);
 // Handle showing loading screen
 export const isLoadingLocation = writable(false);
 export const isLoadingData = writable({
-  waterData: false,
+  weatherData: false,
   soilCharacteristics: false,
   nutrientModel: false
 });
@@ -33,7 +33,7 @@ export const activeLocation = derived(activeLocationId, ($activeLocationId) => {
   if (locs && $activeLocationId && Object.keys(locs).includes($activeLocationId)) {
     isLoadingData.set({
       ...get(isLoadingData),
-      waterData: true,
+      weatherData: true,
       soilCharacteristics: true,
       nutrientModel: true
     });
@@ -44,11 +44,12 @@ export const activeLocation = derived(activeLocationId, ($activeLocationId) => {
 }, null);
 
 // Fetches precip and PET data for location
-export const waterData = asyncDerived(activeLocation, async ($activeLocation) => {
+export const weatherData = asyncDerived(activeLocation, async ($activeLocation) => {
   let results = null;
   if ($activeLocation) {
-    results = await getWaterData($activeLocation, endDate);
-    changeLoading('waterData', false);
+    results = await getWeatherData($activeLocation, endDate);
+    console.log(results);
+    changeLoading('weatherData', false);
     changeLoading('nutrientModel', results === null ? false : true);
   }
   return results;
@@ -64,6 +65,17 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
     const loaded = loadOptions();
     if (loaded && Object.keys(loaded).includes($activeLocation.id)) {
       newUO = loaded[$activeLocation.id];
+
+      // Converts old f/m/s structure of org N to new org N array
+      const appDates = Object.keys(newUO.applications);
+      if (appDates.length && typeof newUO.applications[appDates[0]].fastN === 'number') {
+        appDates.forEach(d => {
+          const { fastN, mediumN, slowN } = newUO.applications[d];
+          newUO.applications[d].fastN = [['Other Fast Nitrogen', fastN]];
+          newUO.applications[d].mediumN = [['Other Medium Nitrogen', mediumN]];
+          newUO.applications[d].slowN = [['Other Slow Nitrogen', slowN]];
+        });
+      }
     } else if (newSC) {
       newUO = {
         waterCapacity: newSC.waterCapacity,
@@ -136,10 +148,10 @@ export const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA)));
 export let userOptions = writable(null);
 
 // Run the nutrient model when options or precip/PET data change
-export const nutrientData = derived([devOptions, userOptions, waterData], ([$devOptions, $userOptions, $waterData]) => {
+export const nutrientData = derived([devOptions, userOptions, weatherData], ([$devOptions, $userOptions, $weatherData]) => {
   let results = null;
-  if ($devOptions && $userOptions && $waterData) {
-    const nmRes = handleRunNutrientModel($devOptions, $userOptions, $waterData);
+  if ($devOptions && $userOptions && $weatherData) {
+    const nmRes = handleRunNutrientModel($devOptions, $userOptions, $weatherData);
 
     const {
       prewiltingpoint,
@@ -155,14 +167,14 @@ export const nutrientData = derived([devOptions, userOptions, waterData], ([$dev
       saturation
     ].map(t => Math.round(t / 18 * 1000) / 1000);
 
-    const plantingDateIdx = $waterData.dates.findIndex(d => d === $userOptions.plantingDate);
-    const terminationDateIdx = $waterData.dates.findIndex(d => d === $userOptions.terminationDate);
-    const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, $userOptions.applications, $waterData.dates, plantingDateIdx, terminationDateIdx);
-    const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $waterData.dates, plantingDateIdx, terminationDateIdx);
+    const plantingDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.plantingDate);
+    const terminationDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.terminationDate);
+    const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, $userOptions.applications, $weatherData.dates, plantingDateIdx, terminationDateIdx);
+    const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $weatherData.dates, plantingDateIdx, terminationDateIdx);
 
     results = { ...nmRes, ...vwcChartDetails, ...tinChartDetails };
   }
-  if ($devOptions && $userOptions && $waterData !== null) {
+  if ($devOptions && $userOptions && $weatherData !== null) {
     changeLoading('nutrientModel', false);
   }
   return results;

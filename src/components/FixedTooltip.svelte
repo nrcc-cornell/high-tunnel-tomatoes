@@ -18,6 +18,8 @@
     key: 'slowN',
     appKey: 'slowN'
   }];
+
+  $: console.log($tooltipData);
 </script>
 
 {#if $tooltipData}
@@ -34,11 +36,11 @@
       <p class='header'>Added Today</p>
     {/if}
 
-    {#each nRows as { title, key }}
+    {#each nRows as { title, key, appKey }}
       <p class='row-header'>{title}</p>
       <p>{Math.round($tooltipData[key].ppm)}ppm ({Math.round($tooltipData[key].lbsPerAcre)}lbs/acre)</p>
       {#if $tooltipData.application}
-        <p>{Math.round($tooltipData.application.inorganicN)}lbs/acre</p>
+        <p>{Math.round(key === 'tin' ? $tooltipData.application.inorganicN : $tooltipData.application[key].reduce((acc, arr) => acc += arr[1], 0))}lbs/acre</p>
       {/if}
     {/each}
 

@@ -93,12 +93,11 @@ export const SOIL_DATA = {
     high: { daysToDrainToFcFromSat: 2.0 },
   },
   somKN: 0.000083,
-  fastKN: 0.1,
-  mediumKN: 0.003,
-  slowKN: 0.0002
+  q10: 2,
+  tempO: 20
 };
 
-function getCropCoeff(numdays, devSD) {
+function getCropCoeff(hasPlants, numdays, devSD) {
   // -----------------------------------------------------------------------------------------
   // Calculate crop coefficient for a specific growth stage of plant.
   // - Coefficients for initial, middle and end growth stages are assigned directly.
@@ -126,7 +125,10 @@ function getCropCoeff(numdays, devSD) {
   } = devSD.soilmoistureoptions.kc;
   let Kc = null;
 
-  if (numdays <= Lini.value) {
+  if (!hasPlants) {
+      // no plants present
+      Kc = 0.15;
+  } else if (numdays <= Lini.value) {
       // before planting or in initial growth stage
       Kc = Kcini.value
   } else if ((numdays > Lini.value) && (numdays < (Lini.value+Ldev.value))) {
@@ -186,6 +188,7 @@ function getWaterStressCoeff(Dr: number, TAW: number, p: number): number {
 function runNutrientModel(
   precip: number[],
   pet: number[],
+  soilTemp: number[],
   soilcap: SoilMoistureOptionLevel,
   plantingDate: Date,
   terminationDate: Date,
@@ -222,16 +225,27 @@ function runNutrientModel(
   //  irrigationIdxs  : array of indices where the user irrigated
   //
   // -----------------------------------------------------------------------------------------
-  const { soilmoistureoptions: soil_options, somKN, fastKN, mediumKN, slowKN } = devSD;
+  const { soilmoistureoptions: soil_options, somKN, q10, tempO } = devSD;
+  
+  
+  
+
+
+
+
+  // use these to calc mineralization adjustment
+  // pass adjustment into balanaceNitrogen()
+  console.log(q10, tempO, soilTemp);
+  
+
+
+
+
   
   // Calculate number of days since planting, negative value means current days in loop below is before planting
-  let daysSincePlanting =  Math.floor(( Date.parse(plantingDate.getFullYear() + '-01-01') - plantingDate.getTime() ) / 86400000);
-  let daysSinceTermination =  Math.floor(( Date.parse(terminationDate.getFullYear() + '-01-01') - terminationDate.getTime() ) / 86400000);
-
-  console.log(plantingDate, terminationDate);
-  console.log(daysSincePlanting, daysSinceTermination);
-
-
+  let daysSincePlanting =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - plantingDate.getTime() ) / 86400000);
+  let daysSinceTermination =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - terminationDate.getTime() ) / 86400000);
+  
   // Initialize running tally of the amount of water in the soil
   let deficit = 0;
   const fc = soil_options[soilcap].fieldcapacity;
@@ -239,9 +253,9 @@ function runNutrientModel(
   // Initialize variables for storing nitrogen values between days
   let tin = 0;
   let som = initialOrganicMatter;
-  let fastN = 0;
-  let mediumN = 0;
-  let slowN = 0;
+  let fastN = [];
+  let mediumN = [];
+  let slowN = [];
   let tableOut;
 
   // Initialize output arrays
@@ -255,12 +269,13 @@ function runNutrientModel(
     'Date',
     'Start Inorg. N.',
     'End Inorg. N.',
+    'Min. Adj. Factor',
     'SOM Min.',
     'Fast N. Min.',
     'Med. N. Min.',
     'Slow N. Min.',
     'Plant Uptake',
-    'Transport'
+    'Leached'
   ]];
 
   // Calculate daily drainage rate that occurs when soil water content is between saturation and field capacity
@@ -277,12 +292,12 @@ function runNutrientModel(
     const TAW = getTawForPlant(soil_options[soilcap]);
     const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
     // Calculate Kc, the crop coefficient, account for if plants exist and what stage they are at
-    const Kc = getCropCoeff(hasPlants ? daysSincePlanting : -1, devSD);
+    const Kc = getCropCoeff(hasPlants, daysSincePlanting, devSD);
 
+    
     
     // Adjust water movement to account for calculated and provided variables
     const totalDailyPET = -1 * pet[idx] * devSD.soilmoistureoptions.petAdj * Kc * Ks;
-    
 
     // const totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
     let totalDailyPrecip = 0;
@@ -290,9 +305,9 @@ function runNutrientModel(
     if (todaysApplications.length) {
       todaysApplications.forEach(obj => {
         totalDailyPrecip += obj.waterAmount;
-        fastN += obj.fastN;
-        mediumN += obj.mediumN;
-        slowN += obj.slowN;
+        fastN = fastN.concat(obj.fastN);
+        mediumN = mediumN.concat(obj.mediumN);
+        slowN = slowN.concat(obj.slowN);
         tin += obj.inorganicN;
       });
     }
@@ -344,11 +359,8 @@ function runNutrientModel(
       tin = lastTest.inorganicN;
     }
 
-    // console.log('--------------------------------------');
-    // console.log(date);
-    // console.log(tin, som, fastN, mediumN, slowN);
-
     const vwc = (deficit + fc) / 18;
+    const mineralizationAdjustmentFactor = q10 ** ((soilTemp[idx] - tempO) / 10);
     const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
     ({tin, som, fastN, mediumN, slowN, tableOut} = balanceNitrogen(
       vwc,
@@ -364,23 +376,17 @@ function runNutrientModel(
       slowN,
       date,
       somKN,
-      fastKN,
-      mediumKN,
-      slowKN
+      mineralizationAdjustmentFactor
     ));
 
     dd.push(deficit);
     vwcDaily.push(Math.round(vwc * 1000) / 1000);
     tinDaily.push(Math.round((tin / 2) * 1000) / 1000);
-    fastDaily.push(Math.round((fastN / 2) * 1000) / 1000);
-    mediumDaily.push(Math.round((mediumN / 2) * 1000) / 1000);
-    slowDaily.push(Math.round((slowN / 2) * 1000) / 1000);
+    fastDaily.push(Math.round((fastN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
+    mediumDaily.push(Math.round((mediumN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
+    slowDaily.push(Math.round((slowN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
     table.push(tableOut);
   }
-
-  // console.log('-------------------------------------');
-  // console.log('-------------------------------------');
-  // console.log(vwcDaily);
 
   return {
     vwc: vwcDaily,
@@ -393,13 +399,14 @@ function runNutrientModel(
   };
 }
 
-export const handleRunNutrientModel = (devOptions, userOptions, waterData) => {
+export const handleRunNutrientModel = (devOptions, userOptions, weatherData) => {
   const { waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter } = userOptions;
-  const { dates, pet, precip } = waterData;
+  const { dates, pet, precip, soilTemp } = weatherData;
   return {
     ...runNutrientModel(
       precip,
       pet,
+      soilTemp,
       waterCapacity,
       plantingDate ? new Date(plantingDate + 'T00:00') : new Date(),
       terminationDate ? new Date(terminationDate + 'T00:00') : new Date(),

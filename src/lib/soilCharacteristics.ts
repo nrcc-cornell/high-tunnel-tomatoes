@@ -172,15 +172,4 @@ export async function getSoilCharacteristics(activeLocation) {
     organicMatter: Math.round(avgOM),
     bulkDensity: avgBD
   };
-
-  // return {
-  //   "waterCapacity": "medium",
-  //   "composition": {
-  //     "clay": 1,
-  //     "sand": 21,
-  //     "silt": 11
-  //   },
-  //   "organicMatter": 1,
-  //   "bulkDensity": 0.43910569105691066
-  // };
 }

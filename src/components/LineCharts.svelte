@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { nutrientData, waterData } from "../store/store";
+  import { nutrientData, weatherData } from "../store/store";
   
   import LineChart from "./LineChart.svelte";
   import FixedTooltip from "./FixedTooltip.svelte";
@@ -11,7 +11,7 @@
     yAxisLabel: string,
     showResetZoomBtn: boolean
   ) {
-    const { fcstLength } = $waterData;
+    const { fcstLength } = $weatherData;
     const data = nutrientData[dataKey];
     const dataLength = data.length;
 

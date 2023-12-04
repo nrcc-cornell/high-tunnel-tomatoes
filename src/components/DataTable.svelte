@@ -1,11 +1,38 @@
 <script>
   import { nutrientData } from "../store/store";
+	import * as XLSX from 'xlsx';
+  import Button from "./Button.svelte";
 
   $: tableData = $nutrientData ? $nutrientData.table : null;
+	$: console.log($nutrientData);
+
+	const handleDownload = () => {
+		if ($nutrientData) {
+			const rows = $nutrientData.table.map((r, i) => ({
+				date: r[0],
+				startingInorg: r[1],
+				endingInorg: r[2],
+				minAdjFactor: r[3],
+				somMineralized: r[4],
+				fastNMineralized: r[5],
+				mediumNMineralized: r[6],
+				slowNMineralized: r[7],
+				plantUptake: r[8],
+				vwc: i === 0 ? 'VWC' : $nutrientData.vwc[i - 1],
+				leached: r[9]
+			}));
+
+			const worksheet = XLSX.utils.json_to_sheet(rows, { skipHeader: true });
+			const workbook = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(workbook, worksheet, 'Model');
+			XLSX.writeFile(workbook, 'high-tunnel-model-output.xlsx', { compression: true });
+		}
+	};
 </script>
 
 {#if tableData}
-  <table class='redTable'>
+  <div style='margin: 20px;'><Button onClick={handleDownload}>Download Table (XLSX)</Button></div>
+	<table class='redTable'>
     <thead>
       <tr>
         {#each tableData[0] as columnHeading, i}
@@ -13,7 +40,7 @@
         {/each}
       <tr/>
       <tr>
-        <th colspan="8">(lbs/acre)</th>
+        <th colspan="9">(lbs/acre)</th>
       <tr/>
     </thead>
     <tbody>

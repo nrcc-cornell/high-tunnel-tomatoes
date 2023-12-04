@@ -1,3 +1,5 @@
+import { calcMineralizedLbs, adjustForExtraMineralization } from "./nitrogenHelpers";
+
 const rootDepthInches = 18;
 const rootDepthMeters = convertInToM(rootDepthInches);
 // const somKN = 0.000083;
@@ -53,14 +55,12 @@ export default function balanceNitrogen(
   pet: number,
   tin: number,
   som: number,
-  fastN: number,
-  mediumN: number,
-  slowN: number,
+  fastN: number[],
+  mediumN: number[],
+  slowN: number[],
   date: string,
   somKN: number,
-  fastKN: number,
-  mediumKN: number,
-  slowKN: number
+  mineralizationAdjustmentFactor: number
 ) {
   //  -------------------------------------------------------------
   //  Calculate soil inorganic nitrogen (lbs/acre) from daily volumetric water content, 
@@ -76,20 +76,13 @@ export default function balanceNitrogen(
   const gTheta = (fc - mp)/(vwc - mp); //// supposed to be equation from Josef
   const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
 
-  let somLbs = convertOMPercentToLbAcre(som);
-  const somMineralizedLbs = gTheta * somKN * somLbs;
-  const fastMineralizedLbs = gTheta * fastKN * fastN;
-  const mediumMineralizedLbs = gTheta * mediumKN * mediumN;
-  const slowMineralizedLbs = gTheta * slowKN * slowN;
-  
-  
-  // console.log(gTheta, fastKN, fastN, gTheta * fastKN * fastN);
-  // console.log(`somLbs: ${somLbs}`);
-  // console.log(`somMineralizedLbs: ${somMineralizedLbs}`);
-  // console.log(`fastMineralizedLbs: ${fastMineralizedLbs}`);
-  // console.log(`mediumMineralizedLbs: ${mediumMineralizedLbs}`);
-  // console.log(`slowMineralizedLbs: ${slowMineralizedLbs}`);
 
+  let somLbs = convertOMPercentToLbAcre(som);
+  const somMineralizedLbs = mineralizationAdjustmentFactor * gTheta * somKN * somLbs;
+  const { amountMineralized: fastMineralizedLbs, newApplicationsArray: newFastN } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, fastN);
+  const { amountMineralized: mediumMineralizedLbs, newApplicationsArray: newMediumN } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, mediumN);
+  const { amountMineralized: slowMineralizedLbs, newApplicationsArray: newSlowN } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, slowN);
+  
   
   const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
   const tnKgs = convertLbAcreToKgM2(tnLbs);
@@ -105,26 +98,23 @@ export default function balanceNitrogen(
   const qnLbs = convertKgM2ToLbAcre(QN);
   const otherRemoved = (unLbs + qnLbs) / 4;
 
-  // console.log(`TIN LBS/ACRE: ${newTinLbs}`);
-  // console.log(`UN: ${convertKgM2ToLbAcre(UN)}   QN: ${convertKgM2ToLbAcre(QN)}`);
-  // console.log(fastN, fastMineralizedLbs, otherRemoved, fastN - fastMineralizedLbs - otherRemoved);
-
   return {
     tin: Math.max(newTinLbs, 0),
     som: Math.max(convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved), 0),
-    fastN: Math.max(fastN - fastMineralizedLbs - otherRemoved, 0),
-    mediumN: Math.max(mediumN - mediumMineralizedLbs - otherRemoved, 0),
-    slowN: Math.max(slowN - slowMineralizedLbs - otherRemoved, 0),
+    fastN: adjustForExtraMineralization(otherRemoved, fastN),
+    mediumN: adjustForExtraMineralization(otherRemoved, mediumN),
+    slowN: adjustForExtraMineralization(otherRemoved, slowN),
     tableOut: [
       date,
-      Math.round((tin / 2) * 1000) / 1000,
-      Math.max(Math.round((newTinLbs / 2) * 1000) / 1000, 0),
-      Math.max(Math.round((somMineralizedLbs / 2) * 1000) / 1000,0),
-      Math.max(Math.round((fastMineralizedLbs / 2) * 1000) / 1000,0),
-      Math.max(Math.round((mediumMineralizedLbs / 2) * 1000) / 1000,0),
-      Math.max(Math.round((slowMineralizedLbs / 2) * 1000) / 1000,0),
-      Math.max(Math.round((unLbs / 2) * 1000) / 1000,0),
-      Math.max(Math.round((qnLbs / 2) * 1000) / 1000,0)
+      Math.round(tin * 100000) / 100000,
+      Math.max(Math.round(newTinLbs * 100000) / 100000, 0),
+      Math.round(mineralizationAdjustmentFactor * 100000) / 100000,
+      Math.max(Math.round(somMineralizedLbs * 100000) / 100000,0),
+      Math.max(Math.round(fastMineralizedLbs * 100000) / 100000,0),
+      Math.max(Math.round(mediumMineralizedLbs * 100000) / 100000,0),
+      Math.max(Math.round(slowMineralizedLbs * 100000) / 100000,0),
+      Math.max(Math.round(unLbs * 100000) / 100000,0),
+      Math.max(Math.round(qnLbs * 100000) / 100000,0)
     ]
   };
 }

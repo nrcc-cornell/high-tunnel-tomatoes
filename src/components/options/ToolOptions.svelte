@@ -120,39 +120,6 @@
               input$min='0'
               input$max='1'
             />
-            <ShapedTextfield
-              bind:value={localDevOptions.fastKN}
-              highlight={localDevOptions.fastKN !== $devOptions.fastKN}
-              label='Fast'
-              helperText='Fast Nitrogen Mineralization Rate'
-              helperProps={{ persistent: true }}
-              type='number'
-              input$step='0.0000001'
-              input$min='0'
-              input$max='1'
-            />
-            <ShapedTextfield
-              bind:value={localDevOptions.mediumKN}
-              highlight={localDevOptions.mediumKN !== $devOptions.mediumKN}
-              label='Medium'
-              helperText='Medium Nitrogen Mineralization Rate'
-              helperProps={{ persistent: true }}
-              type='number'
-              input$step='0.0000001'
-              input$min='0'
-              input$max='1'
-            />
-            <ShapedTextfield
-              bind:value={localDevOptions.slowKN}
-              highlight={localDevOptions.slowKN !== $devOptions.slowKN}
-              label='Slow'
-              helperText='Slow Nitrogen Mineralization Rate'
-              helperProps={{ persistent: true }}
-              type='number'
-              input$step='0.0000001'
-              input$min='0'
-              input$max='1'
-            />
           </div>
         </div>
         <div>
@@ -223,6 +190,24 @@
               input$step='0.01'
               input$min='0'
               input$max='1'
+            />
+            <ShapedTextfield
+              bind:value={localDevOptions.q10}
+              highlight={localDevOptions.q10 !== $devOptions.q10}
+              label='Q10'
+              type='number'
+              input$step='0.1'
+              input$min='0'
+              input$max='100'
+            />
+            <ShapedTextfield
+              bind:value={localDevOptions.tempO}
+              highlight={localDevOptions.tempO !== $devOptions.tempO}
+              label='To'
+              type='number'
+              input$step='0.1'
+              input$min='0'
+              input$max='100'
             />
           </div>
         </div>

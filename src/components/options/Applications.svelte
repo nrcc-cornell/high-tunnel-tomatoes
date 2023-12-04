@@ -4,20 +4,22 @@
   import Button from "../Button.svelte";
   import Modal from "../Modal.svelte";
   import ShapedTextfield from "./ShapedTextfield.svelte";
+  import ShapedSelect from "./ShapedSelect.svelte";
 
+  import { organicAmendments } from '../../lib/nitrogenHelpers';
 	import { userOptions, endDate } from "../../store/store";
   $: applications = $userOptions.applications;
   $: hasEvents = Object.keys(applications).length > 0;
 
   const iconDim = 20;
-  const newApplicationEvent = {
+  const newApplicationEvent = () => ({
     date: null,
     waterAmount: 0,
-    fastN: 0,
-    mediumN: 0,
-    slowN: 0,
+    fastN: [],
+    mediumN: [],
+    slowN: [],
     inorganicN: 0
-  };
+  });
 
   function removeApplication(id) {
     const newUOs = JSON.parse(JSON.stringify($userOptions));
@@ -42,6 +44,8 @@
     }
   }
 
+  let amendment = null;
+  let amountAdded = 0;
   let modalOpen = false;
   let editingEvent = null;
   let justChanged = null;
@@ -52,7 +56,7 @@
       editingEvent = { ...application };
     } else {
       editingEvent = {
-        ...newApplicationEvent,
+        ...newApplicationEvent(),
         id: new Date().getTime()
       };
     }
@@ -63,6 +67,32 @@
     modalOpen = false;
     editingEvent = null;
 	}
+
+  function addAmendment() {
+    if (editingEvent && amendment && amountAdded > 0) {
+      const newEditingEvent = JSON.parse(JSON.stringify(editingEvent));
+      const selectedAmendment = organicAmendments.find(opt => opt.name === amendment);
+      const category = `${selectedAmendment.category}N`;
+
+      const matchingAmendment = newEditingEvent[category].find(arr => arr[0] === amendment);
+      if (matchingAmendment) {
+        matchingAmendment[1] += amountAdded;
+      } else {
+        newEditingEvent[category].push([amendment, amountAdded]);
+      }
+      
+      editingEvent = newEditingEvent;
+      amendment = null;
+      amountAdded = 0;
+    }
+  }
+
+  function removeAmendment(category, name) {
+    const newEditingEvent = JSON.parse(JSON.stringify(editingEvent));
+    const amendmentIdx = newEditingEvent[category].findIndex(arr => arr[0] === name);
+    newEditingEvent[category].splice(amendmentIdx, 1);
+    editingEvent = newEditingEvent;
+  }
 </script>
 
 {#if hasEvents}
@@ -90,9 +120,9 @@
           <p>{application.date.slice(5).replace('-','/')}</p>
           <p>{application.waterAmount}</p>
           <div>
-            <p>{application.fastN}</p>
-            <p>{application.mediumN}</p>
-            <p>{application.slowN}</p>
+            <p>{application.fastN.reduce((acc,arr) => acc += arr[1], 0)}</p>
+            <p>{application.mediumN.reduce((acc,arr) => acc += arr[1], 0)}</p>
+            <p>{application.slowN.reduce((acc,arr) => acc += arr[1], 0)}</p>
           </div>
           <p>{application.inorganicN}</p>
           <div class='btns-container'>
@@ -120,49 +150,18 @@
         input$min={`${parseInt(endDate.slice(0,4)) - 1}-01-01`}
         input$max={endDate}
       />
-      <ShapedTextfield
-        bind:value={editingEvent.waterAmount}
-        label='Water'
-        helperText='Amount of water added in inches'
-        helperProps={{ persistent: true }}
-        type='number'
-        input$step='0.01'
-        input$min='0'
-        width=175
-      />
-      <div class='n-inputs'>
-        <div class='org-inputs'>
-          <ShapedTextfield
-            bind:value={editingEvent.fastN}
-            label='Fast Organic Nitrogen'
-            helperText='Amount of fast organic nitrogen added in lbs/acre'
-            helperProps={{ persistent: true }}
-            type='number'
-            input$step='1'
-            input$min='0'
-            width=175
-          />
-          <ShapedTextfield
-            bind:value={editingEvent.mediumN}
-            label='Medium Organic Nitrogen'
-            helperText='Amount of medium organic nitrogen added in lbs/acre'
-            helperProps={{ persistent: true }}
-            type='number'
-            input$step='1'
-            input$min='0'
-            width=175
-          />
-          <ShapedTextfield
-            bind:value={editingEvent.slowN}
-            label='Slow Organic Nitrogen'
-            helperText='Amount of slow organic nitrogen added in lbs/acre'
-            helperProps={{ persistent: true }}
-            type='number'
-            input$step='1'
-            input$min='0'
-            width=175
-          />
-        </div>
+      <div class="application-inputs">
+        <ShapedTextfield
+          bind:value={editingEvent.waterAmount}
+          label='Water'
+          helperText='Amount of water added in inches'
+          helperProps={{ persistent: true }}
+          type='number'
+          input$step='0.01'
+          input$min='0'
+          width=175
+        />
+
         <ShapedTextfield
           bind:value={editingEvent.inorganicN}
           label='Inorganic Nitrogen'
@@ -173,6 +172,56 @@
           input$min='0'
           width=175
         />
+      </div>
+      <div class='application-inputs' style='flex-direction: column;'>
+        <h5 style='margin: 0;'>Organic Amendments</h5>
+        <div class="add-organic">
+          <ShapedSelect
+            bind:value={amendment}
+            label='Amendment Type'
+            options={organicAmendments.map(opt => ({ name: opt.name, value: opt.name }))}
+          />
+          
+          <ShapedTextfield
+            bind:value={amountAdded}
+            label='Amount Applied'
+            helperText='Amount of organic amendment added in lbs/acre'
+            helperProps={{ persistent: true }}
+            type='number'
+            input$step='1'
+            input$min='0'
+            width=175
+          />
+
+          <div class='add-amendment-btn'>
+            <Button
+              btnType='green'
+              disabled={!amendment || amountAdded <= 0}
+              disabledText='Not valid'
+              onClick={addAmendment}
+            >
+              Add Amendment
+            </Button>
+          </div>
+        </div>
+        {#if editingEvent}
+          <div class='proposed-amendment-lists'>
+            {#each ['fastN', 'mediumN', 'slowN'] as category}
+            {#if editingEvent[category].length}
+                <h6>{category.slice(0,1).toUpperCase() + category.slice(1,-1)} Nitrogen Applied</h6>
+                <ul>
+                  {#each editingEvent[category] as [name, amount]}
+                  <li>
+                    <p>{name}:</p>
+                    <p>{amount} lbs/acre</p>
+                    <div style='margin-left: 6px;'><Button btnType='delete' onClick={() => removeAmendment(category, name)}><DeleteOutline width={iconDim} height={iconDim} /></Button></div>
+                  </li>
+                  {/each}
+                </ul>
+              {/if}
+            {/each}
+          </div>
+        {/if}
       </div>
       <div class='btns-container'>
         <Button btnType='cancel' onClick={closeModal}>Cancel</Button>
@@ -237,17 +286,46 @@
     max-height: 90vh;
     overflow-y: auto;
 
-    .n-inputs {
+    .application-inputs {
       flex-wrap: wrap;
       display: flex;
       gap: 12px;
-      align-items: center;
+      align-items: flex-start;
+
+      .add-organic {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+
+        .add-amendment-btn {
+          margin-top: 18px;
+          width: 118px;
+          display: flex;
+          justify-content: center;
+        }
+
+        :global(.mdc-menu-surface--open) {
+          max-height: 300px !important;
+        }
+      }
     }
 
-    .org-inputs {
-      display: flex;
-      gap: 12px;
-      flex-wrap: nowrap;
+    .proposed-amendment-lists {
+      h6 {
+        margin: 0;
+        text-align: left;
+      }
+      
+      ul {
+        list-style: none;
+        margin: 0;
+
+        li {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+        }
+      }
     }
   }
 

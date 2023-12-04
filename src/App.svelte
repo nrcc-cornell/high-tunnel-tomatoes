@@ -4,10 +4,10 @@
   import Loading from "./components/Loading.svelte";
 	import LocationPicker from "./components/locationPicker/LocationPicker.svelte";
   import ToolOptions from "./components/options/ToolOptions.svelte";
-	import { soilCharacteristics, waterData, nutrientData, isLoadingData, devOptions, userOptions } from "./store/store";
+	import { soilCharacteristics, weatherData, nutrientData, isLoadingData, devOptions, userOptions } from "./store/store";
 
 	// $: console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
-	// $: console.log('APP WATERDATA: ', $waterData);
+	// $: console.log('APP WATERDATA: ', $weatherData);
 	// $: console.log('APP NUTRIENTDATA: ', $nutrientData);
 	// $: console.log('APP DEVOPTIONS: ', $devOptions);
 	// $: console.log('APP USEROPTIONS: ', $userOptions);
