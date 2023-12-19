@@ -1181,6 +1181,7 @@ var app = (function () {
             fastN: adjustForExtraMineralization(otherRemoved, fastN),
             mediumN: adjustForExtraMineralization(otherRemoved, mediumN),
             slowN: adjustForExtraMineralization(otherRemoved, slowN),
+            leached: Math.max(Math.round(qnLbs * 1000) / 1000, 0),
             tableOut: [
                 date,
                 Math.round(tin * 100000) / 100000,
@@ -1207,81 +1208,82 @@ var app = (function () {
     })(SoilMoistureOptionLevel || (SoilMoistureOptionLevel = {}));
     // soildata:
     // soil moisture and drainage characteristics for different levels of soil water capacity
-    // const timesSixInch = 2;
-    const timesSixInch = 3;
-    const rounder = 100;
-    const multiplier = timesSixInch * rounder;
-    const SOIL_DATA = {
-        soilmoistureoptions: {
+    // defaults to 18" soil column
+    const calcSoilConstants = (inches) => {
+        const rounder = 100;
+        const calcConstant = (base) => Math.round(base * (inches / 6) * rounder) / rounder; // base values are for 6" column
+        return {
             low: {
-                wiltingpoint: Math.round(0.4 * multiplier) / rounder,
-                prewiltingpoint: Math.round(0.64 * multiplier) / rounder,
-                stressthreshold: Math.round(0.8 * multiplier) / rounder,
-                fieldcapacity: Math.round(1.2 * multiplier) / rounder,
-                saturation: Math.round(2.6 * multiplier) / rounder
+                wiltingpoint: calcConstant(0.4),
+                prewiltingpoint: calcConstant(0.64),
+                stressthreshold: calcConstant(0.8),
+                fieldcapacity: calcConstant(1.2),
+                saturation: calcConstant(2.6)
             },
             medium: {
-                wiltingpoint: Math.round(0.6 * multiplier) / rounder,
-                prewiltingpoint: Math.round(0.945 * multiplier) / rounder,
-                stressthreshold: Math.round(1.175 * multiplier) / rounder,
-                fieldcapacity: Math.round(1.75 * multiplier) / rounder,
-                saturation: Math.round(2.9 * multiplier) / rounder
+                wiltingpoint: calcConstant(0.6),
+                prewiltingpoint: calcConstant(0.945),
+                stressthreshold: calcConstant(1.175),
+                fieldcapacity: calcConstant(1.75),
+                saturation: calcConstant(2.9)
             },
             high: {
-                wiltingpoint: Math.round(0.85 * multiplier) / rounder,
-                prewiltingpoint: Math.round(1.30 * multiplier) / rounder,
-                stressthreshold: Math.round(1.6 * multiplier) / rounder,
-                fieldcapacity: Math.round(2.35 * multiplier) / rounder,
-                saturation: Math.round(3.25 * multiplier) / rounder
+                wiltingpoint: calcConstant(0.85),
+                prewiltingpoint: calcConstant(1.30),
+                stressthreshold: calcConstant(1.6),
+                fieldcapacity: calcConstant(2.35),
+                saturation: calcConstant(3.25)
+            }
+        };
+    };
+    const SOIL_DATA = (inches = 18) => {
+        return {
+            soilmoistureoptions: Object.assign(Object.assign({}, calcSoilConstants(inches)), { kc: {
+                    Lini: {
+                        name: 'Initial Growth Stage Length',
+                        value: 30,
+                        description: 'length (days) of initial growth stage'
+                    },
+                    Ldev: {
+                        name: 'Development Growth Stage Length',
+                        value: 40,
+                        description: 'length (days) of development growth stage'
+                    },
+                    Lmid: {
+                        name: 'Mature Growth Stage Length',
+                        value: 80,
+                        description: 'length (days) of middle (mature) growth stage'
+                    },
+                    Llate: {
+                        name: 'Late Growth Stage Length',
+                        value: 30,
+                        description: 'length (days) of late growth stage'
+                    },
+                    Kcini: {
+                        name: 'Initial Growth Stage Crop Coefficient',
+                        value: 0.60,
+                        description: 'crop coefficient for initial growth stage'
+                    },
+                    Kcmid: {
+                        name: 'Mature Growth Stage Crop Coefficient',
+                        value: 1.15,
+                        description: 'crop coefficient for middle (mature) growth stage'
+                    },
+                    Kcend: {
+                        name: 'End of Season Crop Coefficient',
+                        value: 0.80,
+                        description: 'crop coefficient at end of growing season'
+                    }
+                }, p: 0.5, petAdj: 0.55 }),
+            soildrainageoptions: {
+                low: { daysToDrainToFcFromSat: 0.125 },
+                medium: { daysToDrainToFcFromSat: 1.0 },
+                high: { daysToDrainToFcFromSat: 2.0 },
             },
-            kc: {
-                Lini: {
-                    name: 'Initial Growth Stage Length',
-                    value: 30,
-                    description: 'length (days) of initial growth stage'
-                },
-                Ldev: {
-                    name: 'Development Growth Stage Length',
-                    value: 40,
-                    description: 'length (days) of development growth stage'
-                },
-                Lmid: {
-                    name: 'Mature Growth Stage Length',
-                    value: 80,
-                    description: 'length (days) of middle (mature) growth stage'
-                },
-                Llate: {
-                    name: 'Late Growth Stage Length',
-                    value: 30,
-                    description: 'length (days) of late growth stage'
-                },
-                Kcini: {
-                    name: 'Initial Growth Stage Crop Coefficient',
-                    value: 0.60,
-                    description: 'crop coefficient for initial growth stage'
-                },
-                Kcmid: {
-                    name: 'Mature Growth Stage Crop Coefficient',
-                    value: 1.15,
-                    description: 'crop coefficient for middle (mature) growth stage'
-                },
-                Kcend: {
-                    name: 'End of Season Crop Coefficient',
-                    value: 0.80,
-                    description: 'crop coefficient at end of growing season'
-                }
-            },
-            p: 0.5,
-            petAdj: 0.55
-        },
-        soildrainageoptions: {
-            low: { daysToDrainToFcFromSat: 0.125 },
-            medium: { daysToDrainToFcFromSat: 1.0 },
-            high: { daysToDrainToFcFromSat: 2.0 },
-        },
-        somKN: 0.000083,
-        q10: 2,
-        tempO: 20
+            somKN: 0.000083,
+            q10: 2,
+            tempO: 20
+        };
     };
     function getCropCoeff(hasPlants, numdays, devSD) {
         // -----------------------------------------------------------------------------------------
@@ -1376,9 +1378,6 @@ var app = (function () {
         //
         // -----------------------------------------------------------------------------------------
         const { soilmoistureoptions: soil_options, somKN, q10, tempO } = devSD;
-        // use these to calc mineralization adjustment
-        // pass adjustment into balanaceNitrogen()
-        console.log(q10, tempO, soilTemp);
         // Calculate number of days since planting, negative value means current days in loop below is before planting
         let daysSincePlanting = Math.floor((Date.parse(dates[0].slice(0, 4) + '-01-01') - plantingDate.getTime()) / 86400000);
         let daysSinceTermination = Math.floor((Date.parse(dates[0].slice(0, 4) + '-01-01') - terminationDate.getTime()) / 86400000);
@@ -1391,6 +1390,7 @@ var app = (function () {
         let fastN = [];
         let mediumN = [];
         let slowN = [];
+        let leached = 0;
         let tableOut;
         // Initialize output arrays
         const vwcDaily = [];
@@ -1398,6 +1398,7 @@ var app = (function () {
         const fastDaily = [];
         const mediumDaily = [];
         const slowDaily = [];
+        const leachedDaily = [];
         const table = [[
                 'Date',
                 'Start Inorg. N.',
@@ -1476,12 +1477,13 @@ var app = (function () {
             const vwc = (deficit + fc) / 18;
             const mineralizationAdjustmentFactor = q10 ** ((soilTemp[idx] - tempO) / 10);
             const mp = 0; //// matric potential that Josef needs to give for high, medium, low
-            ({ tin, som, fastN, mediumN, slowN, tableOut } = balanceNitrogen(vwc, fc / 18, mp, drainageTotal, hasPlants, -1 * totalDailyPET, tin, som, fastN, mediumN, slowN, date, somKN, mineralizationAdjustmentFactor));
+            ({ tin, som, fastN, mediumN, slowN, leached, tableOut } = balanceNitrogen(vwc, fc / 18, mp, drainageTotal, hasPlants, -1 * totalDailyPET, tin, som, fastN, mediumN, slowN, date, somKN, mineralizationAdjustmentFactor));
             vwcDaily.push(Math.round(vwc * 1000) / 1000);
             tinDaily.push(Math.round((tin / 2) * 1000) / 1000);
             fastDaily.push(Math.round((fastN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
             mediumDaily.push(Math.round((mediumN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
             slowDaily.push(Math.round((slowN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
+            leachedDaily.push(leached);
             table.push(tableOut);
         }
         return {
@@ -1490,6 +1492,7 @@ var app = (function () {
             fastN: fastDaily,
             mediumN: mediumDaily,
             slowN: slowDaily,
+            leached: leachedDaily,
             table
             // dd
         };
@@ -4773,9 +4776,13 @@ var app = (function () {
                         newUO.applications[d].slowN = [['Other Slow Nitrogen', slowN]];
                     });
                 }
+                if (!Object.keys(newUO).includes('rootDepth')) {
+                    newUO.rootDepth = 18;
+                }
             }
             else if (newSC) {
                 newUO = {
+                    rootDepth: 18,
                     waterCapacity: newSC.waterCapacity,
                     initialOrganicMatter: newSC.organicMatter,
                     plantingDate: null,
@@ -4836,12 +4843,14 @@ var app = (function () {
             if (get_store_value(userOptions) === null && newUO === null) {
                 changeLoading('nutrientModel', false);
             }
+            const devO = get_store_value(devOptions);
+            devOptions.set(Object.assign(Object.assign({}, devO), { soilmoistureoptions: Object.assign(Object.assign({}, devO.soilmoistureoptions), calcSoilConstants(newUO.rootDepth)) }));
             userOptions.set(newUO);
         }
         changeLoading('soilCharacteristics', false);
         return newSC;
     }, null);
-    const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA)));
+    const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA())));
     let userOptions = writable(null);
     // Run the nutrient model when options or precip/PET data change
     const nutrientData = derived([devOptions, userOptions, weatherData], ([$devOptions, $userOptions, $weatherData]) => {
@@ -4859,6 +4868,7 @@ var app = (function () {
             const terminationDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.terminationDate);
             const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, $userOptions.applications, $weatherData.dates, plantingDateIdx, terminationDateIdx);
             const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $weatherData.dates, plantingDateIdx, terminationDateIdx);
+            console.log(nmRes, vwcChartDetails, tinChartDetails);
             results = Object.assign(Object.assign(Object.assign({}, nmRes), vwcChartDetails), tinChartDetails);
         }
         if ($devOptions && $userOptions && $weatherData !== null) {
@@ -4873,13 +4883,14 @@ var app = (function () {
         if ($hoverIdxPos === null)
             return null;
         const { applications, testResults } = get_store_value(userOptions);
-        const { dates, vwc, tin, fastN, mediumN, slowN } = get_store_value(nutrientData);
+        const { dates, vwc, tin, fastN, mediumN, slowN, leached } = get_store_value(nutrientData);
         const date = dates[$hoverIdxPos];
         const vwcValue = vwc[$hoverIdxPos];
         const tinPpmValue = tin[$hoverIdxPos];
         const fastNPpmValue = fastN[$hoverIdxPos];
         const mediumNPpmValue = mediumN[$hoverIdxPos];
         const slowNPpmValue = slowN[$hoverIdxPos];
+        const leachedNLbsValue = slowN[$hoverIdxPos];
         const application = Object.values(applications).find((obj) => obj.date === date);
         const testResult = Object.values(testResults).find((obj) => obj.date === date);
         return {
@@ -4889,6 +4900,7 @@ var app = (function () {
             fastN: { ppm: fastNPpmValue, lbsPerAcre: fastNPpmValue * 2 },
             mediumN: { ppm: mediumNPpmValue, lbsPerAcre: mediumNPpmValue * 2 },
             slowN: { ppm: slowNPpmValue, lbsPerAcre: slowNPpmValue * 2 },
+            leached: { ppm: leachedNLbsValue / 2, lbsPerAcre: leachedNLbsValue },
             application: application || null,
             testResult: testResult || null
         };
@@ -32497,7 +32509,7 @@ var app = (function () {
     const file$A = "src/components/Button.svelte";
 
     // (11:2) {:else}
-    function create_else_block$7(ctx) {
+    function create_else_block$8(ctx) {
     	let current;
     	const default_slot_template = /*#slots*/ ctx[7].default;
     	const default_slot = create_slot(default_slot_template, ctx, /*$$scope*/ ctx[6], null);
@@ -32545,7 +32557,7 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_else_block$7.name,
+    		id: create_else_block$8.name,
     		type: "else",
     		source: "(11:2) {:else}",
     		ctx
@@ -32594,7 +32606,7 @@ var app = (function () {
     	let current;
     	let mounted;
     	let dispose;
-    	const if_block_creators = [create_if_block$n, create_else_block$7];
+    	const if_block_creators = [create_if_block$n, create_else_block$8];
     	const if_blocks = [];
 
     	function select_block_type(ctx, dirty) {
@@ -50866,7 +50878,7 @@ var app = (function () {
     	return child_ctx;
     }
 
-    // (25:0) {#if $tooltipData}
+    // (29:0) {#if $tooltipData}
     function create_if_block$k(ctx) {
     	let div;
     	let h4;
@@ -50886,8 +50898,8 @@ var app = (function () {
     	let t10;
     	let sup1;
     	let t12;
-    	let if_block0 = /*$tooltipData*/ ctx[0].testResult && create_if_block_4$4(ctx);
-    	let if_block1 = /*$tooltipData*/ ctx[0].application && create_if_block_3$6(ctx);
+    	let if_block0 = /*$tooltipData*/ ctx[0].testResult && create_if_block_6$2(ctx);
+    	let if_block1 = /*$tooltipData*/ ctx[0].application && create_if_block_5$3(ctx);
     	let each_value = /*nRows*/ ctx[1];
     	validate_each_argument(each_value);
     	let each_blocks = [];
@@ -50928,18 +50940,18 @@ var app = (function () {
     			t12 = space();
     			if (if_block2) if_block2.c();
     			attr_dev(h4, "class", "full-row svelte-107ah7t");
-    			add_location(h4, file$w, 26, 4, 624);
+    			add_location(h4, file$w, 30, 4, 697);
     			attr_dev(p0, "class", "row-header svelte-107ah7t");
-    			add_location(p0, file$w, 46, 4, 1333);
-    			add_location(sup0, file$w, 47, 54, 1417);
-    			add_location(sup1, file$w, 47, 69, 1432);
+    			add_location(p0, file$w, 56, 4, 1543);
+    			add_location(sup0, file$w, 57, 54, 1627);
+    			add_location(sup1, file$w, 57, 69, 1642);
     			set_style(p1, "line-height", "10px");
     			attr_dev(p1, "class", "svelte-107ah7t");
-    			add_location(p1, file$w, 47, 4, 1367);
+    			add_location(p1, file$w, 57, 4, 1577);
     			attr_dev(div, "class", "fixed-tooltip-container svelte-107ah7t");
     			set_style(div, "--numCols", /*$tooltipData*/ ctx[0].application ? 3 : 2);
     			set_style(div, "--numRows", 6 + (/*$tooltipData*/ ctx[0].application ? 1 : 0) + (/*$tooltipData*/ ctx[0].testResult ? 1 : 0));
-    			add_location(div, file$w, 25, 2, 438);
+    			add_location(div, file$w, 29, 2, 511);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -50974,7 +50986,7 @@ var app = (function () {
 
     			if (/*$tooltipData*/ ctx[0].testResult) {
     				if (if_block0) ; else {
-    					if_block0 = create_if_block_4$4(ctx);
+    					if_block0 = create_if_block_6$2(ctx);
     					if_block0.c();
     					if_block0.m(div, t2);
     				}
@@ -50985,7 +50997,7 @@ var app = (function () {
 
     			if (/*$tooltipData*/ ctx[0].application) {
     				if (if_block1) ; else {
-    					if_block1 = create_if_block_3$6(ctx);
+    					if_block1 = create_if_block_5$3(ctx);
     					if_block1.c();
     					if_block1.m(div, t3);
     				}
@@ -50994,7 +51006,7 @@ var app = (function () {
     				if_block1 = null;
     			}
 
-    			if (dirty & /*Math, nRows, $tooltipData*/ 3) {
+    			if (dirty & /*Math, $tooltipData, nRows*/ 3) {
     				each_value = /*nRows*/ ctx[1];
     				validate_each_argument(each_value);
     				let i;
@@ -51054,15 +51066,15 @@ var app = (function () {
     		block,
     		id: create_if_block$k.name,
     		type: "if",
-    		source: "(25:0) {#if $tooltipData}",
+    		source: "(29:0) {#if $tooltipData}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (29:4) {#if $tooltipData.testResult}
-    function create_if_block_4$4(ctx) {
+    // (33:4) {#if $tooltipData.testResult}
+    function create_if_block_6$2(ctx) {
     	let p;
 
     	const block = {
@@ -51070,7 +51082,7 @@ var app = (function () {
     			p = element("p");
     			p.textContent = "Test Results Applied";
     			attr_dev(p, "class", "full-row svelte-107ah7t");
-    			add_location(p, file$w, 29, 6, 711);
+    			add_location(p, file$w, 33, 6, 784);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p, anchor);
@@ -51082,17 +51094,17 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block_4$4.name,
+    		id: create_if_block_6$2.name,
     		type: "if",
-    		source: "(29:4) {#if $tooltipData.testResult}",
+    		source: "(33:4) {#if $tooltipData.testResult}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (33:4) {#if $tooltipData.application}
-    function create_if_block_3$6(ctx) {
+    // (37:4) {#if $tooltipData.application}
+    function create_if_block_5$3(ctx) {
     	let p0;
     	let t0;
     	let p1;
@@ -51109,11 +51121,11 @@ var app = (function () {
     			p2 = element("p");
     			p2.textContent = "Added Today";
     			attr_dev(p0, "class", "header svelte-107ah7t");
-    			add_location(p0, file$w, 33, 6, 808);
+    			add_location(p0, file$w, 37, 6, 881);
     			attr_dev(p1, "class", "header svelte-107ah7t");
-    			add_location(p1, file$w, 34, 6, 837);
+    			add_location(p1, file$w, 38, 6, 910);
     			attr_dev(p2, "class", "header svelte-107ah7t");
-    			add_location(p2, file$w, 35, 6, 873);
+    			add_location(p2, file$w, 39, 6, 946);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p0, anchor);
@@ -51133,23 +51145,61 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block_3$6.name,
+    		id: create_if_block_5$3.name,
     		type: "if",
-    		source: "(33:4) {#if $tooltipData.application}",
+    		source: "(37:4) {#if $tooltipData.application}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (42:6) {#if $tooltipData.application}
+    // (46:6) {#if $tooltipData.application}
     function create_if_block_2$6(ctx) {
+    	let if_block_anchor;
+
+    	function select_block_type(ctx, dirty) {
+    		if (/*key*/ ctx[3] === 'tin') return create_if_block_3$6;
+    		if (/*key*/ ctx[3] === 'leached') return create_if_block_4$4;
+    		return create_else_block$7;
+    	}
+
+    	let current_block_type = select_block_type(ctx);
+    	let if_block = current_block_type(ctx);
+
+    	const block = {
+    		c: function create() {
+    			if_block.c();
+    			if_block_anchor = empty();
+    		},
+    		m: function mount(target, anchor) {
+    			if_block.m(target, anchor);
+    			insert_dev(target, if_block_anchor, anchor);
+    		},
+    		p: function update(ctx, dirty) {
+    			if_block.p(ctx, dirty);
+    		},
+    		d: function destroy(detaching) {
+    			if_block.d(detaching);
+    			if (detaching) detach_dev(if_block_anchor);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_2$6.name,
+    		type: "if",
+    		source: "(46:6) {#if $tooltipData.application}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (51:8) {:else}
+    function create_else_block$7(ctx) {
     	let p;
-
-    	let t0_value = Math.round(/*key*/ ctx[3] === 'tin'
-    	? /*$tooltipData*/ ctx[0].application.inorganicN
-    	: /*$tooltipData*/ ctx[0].application[/*key*/ ctx[3]].reduce(func$9, 0)) + "";
-
+    	let t0_value = Math.round(/*$tooltipData*/ ctx[0].application[/*key*/ ctx[3]].reduce(func$9, 0)) + "";
     	let t0;
     	let t1;
 
@@ -51159,7 +51209,7 @@ var app = (function () {
     			t0 = text(t0_value);
     			t1 = text("lbs/acre");
     			attr_dev(p, "class", "svelte-107ah7t");
-    			add_location(p, file$w, 42, 8, 1152);
+    			add_location(p, file$w, 51, 10, 1402);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p, anchor);
@@ -51167,9 +51217,7 @@ var app = (function () {
     			append_dev(p, t1);
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*$tooltipData*/ 1 && t0_value !== (t0_value = Math.round(/*key*/ ctx[3] === 'tin'
-    			? /*$tooltipData*/ ctx[0].application.inorganicN
-    			: /*$tooltipData*/ ctx[0].application[/*key*/ ctx[3]].reduce(func$9, 0)) + "")) set_data_dev(t0, t0_value);
+    			if (dirty & /*$tooltipData*/ 1 && t0_value !== (t0_value = Math.round(/*$tooltipData*/ ctx[0].application[/*key*/ ctx[3]].reduce(func$9, 0)) + "")) set_data_dev(t0, t0_value);
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(p);
@@ -51178,16 +51226,86 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block_2$6.name,
-    		type: "if",
-    		source: "(42:6) {#if $tooltipData.application}",
+    		id: create_else_block$7.name,
+    		type: "else",
+    		source: "(51:8) {:else}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (39:4) {#each nRows as { title, key, appKey }}
+    // (49:36) 
+    function create_if_block_4$4(ctx) {
+    	let p;
+
+    	const block = {
+    		c: function create() {
+    			p = element("p");
+    			p.textContent = "-";
+    			attr_dev(p, "class", "svelte-107ah7t");
+    			add_location(p, file$w, 49, 10, 1367);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, p, anchor);
+    		},
+    		p: noop,
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(p);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_4$4.name,
+    		type: "if",
+    		source: "(49:36) ",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (47:8) {#if key === 'tin'}
+    function create_if_block_3$6(ctx) {
+    	let p;
+    	let t0_value = Math.round(/*$tooltipData*/ ctx[0].application.inorganicN) + "";
+    	let t0;
+    	let t1;
+
+    	const block = {
+    		c: function create() {
+    			p = element("p");
+    			t0 = text(t0_value);
+    			t1 = text("lbs/acre");
+    			attr_dev(p, "class", "svelte-107ah7t");
+    			add_location(p, file$w, 47, 10, 1255);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, p, anchor);
+    			append_dev(p, t0);
+    			append_dev(p, t1);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty & /*$tooltipData*/ 1 && t0_value !== (t0_value = Math.round(/*$tooltipData*/ ctx[0].application.inorganicN) + "")) set_data_dev(t0, t0_value);
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(p);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_3$6.name,
+    		type: "if",
+    		source: "(47:8) {#if key === 'tin'}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (43:4) {#each nRows as { title, key, appKey }}
     function create_each_block$5(ctx) {
     	let p0;
     	let t0_value = /*title*/ ctx[2] + "";
@@ -51218,9 +51336,9 @@ var app = (function () {
     			if (if_block) if_block.c();
     			if_block_anchor = empty();
     			attr_dev(p0, "class", "row-header svelte-107ah7t");
-    			add_location(p0, file$w, 39, 6, 968);
+    			add_location(p0, file$w, 43, 6, 1041);
     			attr_dev(p1, "class", "svelte-107ah7t");
-    			add_location(p1, file$w, 40, 6, 1008);
+    			add_location(p1, file$w, 44, 6, 1081);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p0, anchor);
@@ -51266,14 +51384,14 @@ var app = (function () {
     		block,
     		id: create_each_block$5.name,
     		type: "each",
-    		source: "(39:4) {#each nRows as { title, key, appKey }}",
+    		source: "(43:4) {#each nRows as { title, key, appKey }}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (49:4) {#if $tooltipData.application}
+    // (59:4) {#if $tooltipData.application}
     function create_if_block_1$a(ctx) {
     	let p;
     	let t0_value = /*$tooltipData*/ ctx[0].application.waterAmount + "";
@@ -51286,7 +51404,7 @@ var app = (function () {
     			t0 = text(t0_value);
     			t1 = text("in");
     			attr_dev(p, "class", "svelte-107ah7t");
-    			add_location(p, file$w, 49, 6, 1490);
+    			add_location(p, file$w, 59, 6, 1700);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, p, anchor);
@@ -51305,7 +51423,7 @@ var app = (function () {
     		block,
     		id: create_if_block_1$a.name,
     		type: "if",
-    		source: "(49:4) {#if $tooltipData.application}",
+    		source: "(59:4) {#if $tooltipData.application}",
     		ctx
     	});
 
@@ -51390,6 +51508,11 @@ var app = (function () {
     			title: 'Slow Org. N.',
     			key: 'slowN',
     			appKey: 'slowN'
+    		},
+    		{
+    			title: 'Leached N.',
+    			key: 'leached',
+    			appKey: 'leached'
     		}
     	];
 
@@ -94246,29 +94369,29 @@ var app = (function () {
 
     function get_each_context(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[23] = list[i];
-    	child_ctx[24] = list;
-    	child_ctx[25] = i;
+    	child_ctx[24] = list[i];
+    	child_ctx[25] = list;
+    	child_ctx[26] = i;
     	return child_ctx;
     }
 
     function get_each_context_1(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[26] = list[i];
-    	child_ctx[27] = list;
-    	child_ctx[28] = i;
+    	child_ctx[27] = list[i];
+    	child_ctx[28] = list;
+    	child_ctx[29] = i;
     	return child_ctx;
     }
 
     function get_each_context_2(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[29] = list[i];
-    	child_ctx[30] = list;
-    	child_ctx[31] = i;
+    	child_ctx[30] = list[i];
+    	child_ctx[31] = list;
+    	child_ctx[32] = i;
     	return child_ctx;
     }
 
-    // (46:2) {#if localUserOptions && $soilCharacteristics}
+    // (51:2) {#if localUserOptions && $soilCharacteristics}
     function create_if_block_3(ctx) {
     	let div;
     	let optionscontainer0;
@@ -94316,7 +94439,7 @@ var app = (function () {
     			t1 = space();
     			create_component(optionscontainer2.$$.fragment);
     			attr_dev(div, "class", "user-options-container svelte-z75n2m");
-    			add_location(div, file$1, 46, 4, 1388);
+    			add_location(div, file$1, 51, 4, 1685);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -94330,21 +94453,21 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const optionscontainer0_changes = {};
 
-    			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions, $soilCharacteristics*/ 31 | dirty[1] & /*$$scope*/ 2) {
+    			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions, $soilCharacteristics*/ 31 | dirty[1] & /*$$scope*/ 4) {
     				optionscontainer0_changes.$$scope = { dirty, ctx };
     			}
 
     			optionscontainer0.$set(optionscontainer0_changes);
     			const optionscontainer1_changes = {};
 
-    			if (dirty[1] & /*$$scope*/ 2) {
+    			if (dirty[1] & /*$$scope*/ 4) {
     				optionscontainer1_changes.$$scope = { dirty, ctx };
     			}
 
     			optionscontainer1.$set(optionscontainer1_changes);
     			const optionscontainer2_changes = {};
 
-    			if (dirty[1] & /*$$scope*/ 2) {
+    			if (dirty[1] & /*$$scope*/ 4) {
     				optionscontainer2_changes.$$scope = { dirty, ctx };
     			}
 
@@ -94375,14 +94498,14 @@ var app = (function () {
     		block,
     		id: create_if_block_3.name,
     		type: "if",
-    		source: "(46:2) {#if localUserOptions && $soilCharacteristics}",
+    		source: "(51:2) {#if localUserOptions && $soilCharacteristics}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (92:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
+    // (109:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
     function create_default_slot_5(ctx) {
     	let t;
 
@@ -94402,14 +94525,14 @@ var app = (function () {
     		block,
     		id: create_default_slot_5.name,
     		type: "slot",
-    		source: "(92:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
+    		source: "(109:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
     		ctx
     	});
 
     	return block;
     }
 
-    // (48:6) <OptionsContainer sectionName='Options'>
+    // (53:6) <OptionsContainer sectionName='Options'>
     function create_default_slot_4(ctx) {
     	let div0;
     	let shapedselect;
@@ -94424,6 +94547,9 @@ var app = (function () {
     	let shapedtextfield2;
     	let updating_value_3;
     	let t3;
+    	let shapedtextfield3;
+    	let updating_value_4;
+    	let t4;
     	let div1;
     	let button;
     	let current;
@@ -94455,18 +94581,18 @@ var app = (function () {
     	}
 
     	let shapedtextfield0_props = {
-    		highlight: /*localUserOptions*/ ctx[3].initialOrganicMatter !== /*$userOptions*/ ctx[1].initialOrganicMatter,
-    		label: "Initial Organic Matter",
-    		helperText: "Percent organic matter in the soil on 1/1, default for this location is " + /*$soilCharacteristics*/ ctx[4].organicMatter + "%",
+    		highlight: /*localUserOptions*/ ctx[3].rootDepth !== /*$userOptions*/ ctx[1].rootDepth,
+    		label: "Root Zone Depth (in)",
+    		helperText: "Depth that plants have access to soil moisture",
     		helperProps: { persistent: true },
-    		suffix: "%",
+    		suffix: "in",
     		type: "number",
     		input$min: "0",
     		input$max: "100"
     	};
 
-    	if (/*localUserOptions*/ ctx[3].initialOrganicMatter !== void 0) {
-    		shapedtextfield0_props.value = /*localUserOptions*/ ctx[3].initialOrganicMatter;
+    	if (/*localUserOptions*/ ctx[3].rootDepth !== void 0) {
+    		shapedtextfield0_props.value = /*localUserOptions*/ ctx[3].rootDepth;
     	}
 
     	shapedtextfield0 = new ShapedTextfield({
@@ -94481,17 +94607,19 @@ var app = (function () {
     	}
 
     	let shapedtextfield1_props = {
-    		highlight: /*localUserOptions*/ ctx[3].plantingDate !== /*$userOptions*/ ctx[1].plantingDate,
-    		label: "Planting Date",
-    		helperText: "Date the tomatoes were planted",
+    		highlight: /*localUserOptions*/ ctx[3].initialOrganicMatter !== /*$userOptions*/ ctx[1].initialOrganicMatter,
+    		label: "Initial Organic Matter",
+    		helperText: "Percent organic matter in the soil on 1/1, default for this location is " + /*$soilCharacteristics*/ ctx[4].organicMatter + "%",
     		helperProps: { persistent: true },
-    		type: "date",
-    		input$min: `${parseInt(endDate.slice(0, 4)) - 1}-01-01`,
-    		input$max: endDate
+    		suffix: "%",
+    		type: "number",
+    		input$min: "0",
+    		input$max: "100",
+    		input$step: "1.0"
     	};
 
-    	if (/*localUserOptions*/ ctx[3].plantingDate !== void 0) {
-    		shapedtextfield1_props.value = /*localUserOptions*/ ctx[3].plantingDate;
+    	if (/*localUserOptions*/ ctx[3].initialOrganicMatter !== void 0) {
+    		shapedtextfield1_props.value = /*localUserOptions*/ ctx[3].initialOrganicMatter;
     	}
 
     	shapedtextfield1 = new ShapedTextfield({
@@ -94506,6 +94634,31 @@ var app = (function () {
     	}
 
     	let shapedtextfield2_props = {
+    		highlight: /*localUserOptions*/ ctx[3].plantingDate !== /*$userOptions*/ ctx[1].plantingDate,
+    		label: "Planting Date",
+    		helperText: "Date the tomatoes were planted",
+    		helperProps: { persistent: true },
+    		type: "date",
+    		input$min: `${parseInt(endDate.slice(0, 4)) - 1}-01-01`,
+    		input$max: endDate
+    	};
+
+    	if (/*localUserOptions*/ ctx[3].plantingDate !== void 0) {
+    		shapedtextfield2_props.value = /*localUserOptions*/ ctx[3].plantingDate;
+    	}
+
+    	shapedtextfield2 = new ShapedTextfield({
+    			props: shapedtextfield2_props,
+    			$$inline: true
+    		});
+
+    	binding_callbacks.push(() => bind(shapedtextfield2, 'value', shapedtextfield2_value_binding));
+
+    	function shapedtextfield3_value_binding(value) {
+    		/*shapedtextfield3_value_binding*/ ctx[12](value);
+    	}
+
+    	let shapedtextfield3_props = {
     		highlight: /*localUserOptions*/ ctx[3].terminationDate !== /*$userOptions*/ ctx[1].terminationDate,
     		label: "Termination Date",
     		helperText: "Date the tomatoes were terminated",
@@ -94517,15 +94670,15 @@ var app = (function () {
     	};
 
     	if (/*localUserOptions*/ ctx[3].terminationDate !== void 0) {
-    		shapedtextfield2_props.value = /*localUserOptions*/ ctx[3].terminationDate;
+    		shapedtextfield3_props.value = /*localUserOptions*/ ctx[3].terminationDate;
     	}
 
-    	shapedtextfield2 = new ShapedTextfield({
-    			props: shapedtextfield2_props,
+    	shapedtextfield3 = new ShapedTextfield({
+    			props: shapedtextfield3_props,
     			$$inline: true
     		});
 
-    	binding_callbacks.push(() => bind(shapedtextfield2, 'value', shapedtextfield2_value_binding));
+    	binding_callbacks.push(() => bind(shapedtextfield3, 'value', shapedtextfield3_value_binding));
 
     	button = new Button({
     			props: {
@@ -94551,12 +94704,14 @@ var app = (function () {
     			t2 = space();
     			create_component(shapedtextfield2.$$.fragment);
     			t3 = space();
+    			create_component(shapedtextfield3.$$.fragment);
+    			t4 = space();
     			div1 = element("div");
     			create_component(button.$$.fragment);
     			attr_dev(div0, "class", "other-vars svelte-z75n2m");
-    			add_location(div0, file$1, 48, 8, 1480);
+    			add_location(div0, file$1, 53, 8, 1777);
     			set_style(div1, "margin-top", "24px");
-    			add_location(div1, file$1, 90, 8, 3518);
+    			add_location(div1, file$1, 107, 8, 4278);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div0, anchor);
@@ -94567,7 +94722,9 @@ var app = (function () {
     			mount_component(shapedtextfield1, div0, null);
     			append_dev(div0, t2);
     			mount_component(shapedtextfield2, div0, null);
-    			insert_dev(target, t3, anchor);
+    			append_dev(div0, t3);
+    			mount_component(shapedtextfield3, div0, null);
+    			insert_dev(target, t4, anchor);
     			insert_dev(target, div1, anchor);
     			mount_component(button, div1, null);
     			current = true;
@@ -94585,42 +94742,52 @@ var app = (function () {
 
     			shapedselect.$set(shapedselect_changes);
     			const shapedtextfield0_changes = {};
-    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield0_changes.highlight = /*localUserOptions*/ ctx[3].initialOrganicMatter !== /*$userOptions*/ ctx[1].initialOrganicMatter;
-    			if (dirty[0] & /*$soilCharacteristics*/ 16) shapedtextfield0_changes.helperText = "Percent organic matter in the soil on 1/1, default for this location is " + /*$soilCharacteristics*/ ctx[4].organicMatter + "%";
+    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield0_changes.highlight = /*localUserOptions*/ ctx[3].rootDepth !== /*$userOptions*/ ctx[1].rootDepth;
 
     			if (!updating_value_1 && dirty[0] & /*localUserOptions*/ 8) {
     				updating_value_1 = true;
-    				shapedtextfield0_changes.value = /*localUserOptions*/ ctx[3].initialOrganicMatter;
+    				shapedtextfield0_changes.value = /*localUserOptions*/ ctx[3].rootDepth;
     				add_flush_callback(() => updating_value_1 = false);
     			}
 
     			shapedtextfield0.$set(shapedtextfield0_changes);
     			const shapedtextfield1_changes = {};
-    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield1_changes.highlight = /*localUserOptions*/ ctx[3].plantingDate !== /*$userOptions*/ ctx[1].plantingDate;
+    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield1_changes.highlight = /*localUserOptions*/ ctx[3].initialOrganicMatter !== /*$userOptions*/ ctx[1].initialOrganicMatter;
+    			if (dirty[0] & /*$soilCharacteristics*/ 16) shapedtextfield1_changes.helperText = "Percent organic matter in the soil on 1/1, default for this location is " + /*$soilCharacteristics*/ ctx[4].organicMatter + "%";
 
     			if (!updating_value_2 && dirty[0] & /*localUserOptions*/ 8) {
     				updating_value_2 = true;
-    				shapedtextfield1_changes.value = /*localUserOptions*/ ctx[3].plantingDate;
+    				shapedtextfield1_changes.value = /*localUserOptions*/ ctx[3].initialOrganicMatter;
     				add_flush_callback(() => updating_value_2 = false);
     			}
 
     			shapedtextfield1.$set(shapedtextfield1_changes);
     			const shapedtextfield2_changes = {};
-    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield2_changes.highlight = /*localUserOptions*/ ctx[3].terminationDate !== /*$userOptions*/ ctx[1].terminationDate;
-    			if (dirty[0] & /*localUserOptions*/ 8) shapedtextfield2_changes.disabled = !/*localUserOptions*/ ctx[3].plantingDate;
-    			if (dirty[0] & /*localUserOptions*/ 8) shapedtextfield2_changes.input$min = /*localUserOptions*/ ctx[3].plantingDate;
+    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield2_changes.highlight = /*localUserOptions*/ ctx[3].plantingDate !== /*$userOptions*/ ctx[1].plantingDate;
 
     			if (!updating_value_3 && dirty[0] & /*localUserOptions*/ 8) {
     				updating_value_3 = true;
-    				shapedtextfield2_changes.value = /*localUserOptions*/ ctx[3].terminationDate;
+    				shapedtextfield2_changes.value = /*localUserOptions*/ ctx[3].plantingDate;
     				add_flush_callback(() => updating_value_3 = false);
     			}
 
     			shapedtextfield2.$set(shapedtextfield2_changes);
+    			const shapedtextfield3_changes = {};
+    			if (dirty[0] & /*localUserOptions, $userOptions*/ 10) shapedtextfield3_changes.highlight = /*localUserOptions*/ ctx[3].terminationDate !== /*$userOptions*/ ctx[1].terminationDate;
+    			if (dirty[0] & /*localUserOptions*/ 8) shapedtextfield3_changes.disabled = !/*localUserOptions*/ ctx[3].plantingDate;
+    			if (dirty[0] & /*localUserOptions*/ 8) shapedtextfield3_changes.input$min = /*localUserOptions*/ ctx[3].plantingDate;
+
+    			if (!updating_value_4 && dirty[0] & /*localUserOptions*/ 8) {
+    				updating_value_4 = true;
+    				shapedtextfield3_changes.value = /*localUserOptions*/ ctx[3].terminationDate;
+    				add_flush_callback(() => updating_value_4 = false);
+    			}
+
+    			shapedtextfield3.$set(shapedtextfield3_changes);
     			const button_changes = {};
     			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15) button_changes.disabled = JSON.stringify(/*localDevOptions*/ ctx[2]) === JSON.stringify(/*$devOptions*/ ctx[0]) && JSON.stringify(/*localUserOptions*/ ctx[3]) === JSON.stringify(/*$userOptions*/ ctx[1]);
 
-    			if (dirty[1] & /*$$scope*/ 2) {
+    			if (dirty[1] & /*$$scope*/ 4) {
     				button_changes.$$scope = { dirty, ctx };
     			}
 
@@ -94632,6 +94799,7 @@ var app = (function () {
     			transition_in(shapedtextfield0.$$.fragment, local);
     			transition_in(shapedtextfield1.$$.fragment, local);
     			transition_in(shapedtextfield2.$$.fragment, local);
+    			transition_in(shapedtextfield3.$$.fragment, local);
     			transition_in(button.$$.fragment, local);
     			current = true;
     		},
@@ -94640,6 +94808,7 @@ var app = (function () {
     			transition_out(shapedtextfield0.$$.fragment, local);
     			transition_out(shapedtextfield1.$$.fragment, local);
     			transition_out(shapedtextfield2.$$.fragment, local);
+    			transition_out(shapedtextfield3.$$.fragment, local);
     			transition_out(button.$$.fragment, local);
     			current = false;
     		},
@@ -94649,7 +94818,8 @@ var app = (function () {
     			destroy_component(shapedtextfield0);
     			destroy_component(shapedtextfield1);
     			destroy_component(shapedtextfield2);
-    			if (detaching) detach_dev(t3);
+    			destroy_component(shapedtextfield3);
+    			if (detaching) detach_dev(t4);
     			if (detaching) detach_dev(div1);
     			destroy_component(button);
     		}
@@ -94659,14 +94829,14 @@ var app = (function () {
     		block,
     		id: create_default_slot_4.name,
     		type: "slot",
-    		source: "(48:6) <OptionsContainer sectionName='Options'>",
+    		source: "(53:6) <OptionsContainer sectionName='Options'>",
     		ctx
     	});
 
     	return block;
     }
 
-    // (102:6) <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'>
+    // (119:6) <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'>
     function create_default_slot_3(ctx) {
     	let applications;
     	let current;
@@ -94698,14 +94868,14 @@ var app = (function () {
     		block,
     		id: create_default_slot_3.name,
     		type: "slot",
-    		source: "(102:6) <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'>",
+    		source: "(119:6) <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'>",
     		ctx
     	});
 
     	return block;
     }
 
-    // (103:6) <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'>
+    // (120:6) <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'>
     function create_default_slot_2(ctx) {
     	let testresults;
     	let current;
@@ -94737,14 +94907,14 @@ var app = (function () {
     		block,
     		id: create_default_slot_2.name,
     		type: "slot",
-    		source: "(103:6) <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'>",
+    		source: "(120:6) <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'>",
     		ctx
     	});
 
     	return block;
     }
 
-    // (106:2) {#if localDevOptions && $userOptions}
+    // (123:2) {#if localDevOptions && $userOptions}
     function create_if_block$1(ctx) {
     	let div;
     	let optionscontainer;
@@ -94765,7 +94935,7 @@ var app = (function () {
     			create_component(optionscontainer.$$.fragment);
     			set_style(div, "width", "925px");
     			set_style(div, "margin", "0 auto");
-    			add_location(div, file$1, 106, 4, 4296);
+    			add_location(div, file$1, 123, 4, 5056);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -94775,7 +94945,7 @@ var app = (function () {
     		p: function update(ctx, dirty) {
     			const optionscontainer_changes = {};
 
-    			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15 | dirty[1] & /*$$scope*/ 2) {
+    			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15 | dirty[1] & /*$$scope*/ 4) {
     				optionscontainer_changes.$$scope = { dirty, ctx };
     			}
 
@@ -94800,14 +94970,14 @@ var app = (function () {
     		block,
     		id: create_if_block$1.name,
     		type: "if",
-    		source: "(106:2) {#if localDevOptions && $userOptions}",
+    		source: "(123:2) {#if localDevOptions && $userOptions}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (134:16) {:else}
+    // (151:16) {:else}
     function create_else_block(ctx) {
     	let div;
     	let shapedtextfield;
@@ -94817,19 +94987,19 @@ var app = (function () {
     	let current;
 
     	function shapedtextfield_value_binding(value) {
-    		/*shapedtextfield_value_binding*/ ctx[14](value, /*col*/ ctx[29], /*row*/ ctx[26]);
+    		/*shapedtextfield_value_binding*/ ctx[15](value, /*col*/ ctx[30], /*row*/ ctx[27]);
     	}
 
     	let shapedtextfield_props = {
-    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[29]][/*row*/ ctx[26]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[29]][/*row*/ ctx[26]],
+    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]],
     		type: "number",
     		input$step: "0.01",
     		input$min: "0",
     		width: "115"
     	};
 
-    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[29]][/*row*/ ctx[26]] !== void 0) {
-    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[29]][/*row*/ ctx[26]];
+    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]] !== void 0) {
+    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]];
     	}
 
     	shapedtextfield = new ShapedTextfield({
@@ -94845,11 +95015,11 @@ var app = (function () {
     			create_component(shapedtextfield.$$.fragment);
     			t = space();
 
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[29] === /*$userOptions*/ ctx[1].waterCapacity
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[30] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'highlighted'
     			: '') + " svelte-z75n2m"));
 
-    			add_location(div, file$1, 134, 18, 5619);
+    			add_location(div, file$1, 151, 18, 6379);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -94860,17 +95030,17 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
     			const shapedtextfield_changes = {};
-    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[29]][/*row*/ ctx[26]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[29]][/*row*/ ctx[26]];
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]] !== /*$devOptions*/ ctx[0].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]];
 
     			if (!updating_value && dirty[0] & /*localDevOptions*/ 4) {
     				updating_value = true;
-    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[29]][/*row*/ ctx[26]];
+    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions[/*col*/ ctx[30]][/*row*/ ctx[27]];
     				add_flush_callback(() => updating_value = false);
     			}
 
     			shapedtextfield.$set(shapedtextfield_changes);
 
-    			if (!current || dirty[0] & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[29] === /*$userOptions*/ ctx[1].waterCapacity
+    			if (!current || dirty[0] & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[30] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'highlighted'
     			: '') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
@@ -94895,14 +95065,14 @@ var app = (function () {
     		block,
     		id: create_else_block.name,
     		type: "else",
-    		source: "(134:16) {:else}",
+    		source: "(151:16) {:else}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (132:37) 
+    // (149:37) 
     function create_if_block_2(ctx) {
     	let div;
     	let t_value = /*waterCapacityOptions*/ ctx[6].find(func_1).name + "";
@@ -94910,7 +95080,7 @@ var app = (function () {
     	let div_class_value;
 
     	function func_1(...args) {
-    		return /*func_1*/ ctx[13](/*col*/ ctx[29], ...args);
+    		return /*func_1*/ ctx[14](/*col*/ ctx[30], ...args);
     	}
 
     	const block = {
@@ -94918,11 +95088,11 @@ var app = (function () {
     			div = element("div");
     			t = text(t_value);
 
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[29] === /*$userOptions*/ ctx[1].waterCapacity
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*col*/ ctx[30] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'header highlighted'
     			: 'header') + " svelte-z75n2m"));
 
-    			add_location(div, file$1, 132, 18, 5430);
+    			add_location(div, file$1, 149, 18, 6190);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -94931,7 +95101,7 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
 
-    			if (dirty[0] & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[29] === /*$userOptions*/ ctx[1].waterCapacity
+    			if (dirty[0] & /*$userOptions*/ 2 && div_class_value !== (div_class_value = "" + (null_to_empty(/*col*/ ctx[30] === /*$userOptions*/ ctx[1].waterCapacity
     			? 'header highlighted'
     			: 'header') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
@@ -94948,14 +95118,14 @@ var app = (function () {
     		block,
     		id: create_if_block_2.name,
     		type: "if",
-    		source: "(132:37) ",
+    		source: "(149:37) ",
     		ctx
     	});
 
     	return block;
     }
 
-    // (130:16) {#if col === 'constName'}
+    // (147:16) {#if col === 'constName'}
     function create_if_block_1$1(ctx) {
     	let div;
     	let t;
@@ -94963,10 +95133,10 @@ var app = (function () {
     	const block = {
     		c: function create() {
     			div = element("div");
-    			t = text(/*row*/ ctx[26]);
+    			t = text(/*row*/ ctx[27]);
     			attr_dev(div, "class", "header svelte-z75n2m");
     			set_style(div, "height", "24px");
-    			add_location(div, file$1, 130, 18, 5320);
+    			add_location(div, file$1, 147, 18, 6080);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -94984,14 +95154,14 @@ var app = (function () {
     		block,
     		id: create_if_block_1$1.name,
     		type: "if",
-    		source: "(130:16) {#if col === 'constName'}",
+    		source: "(147:16) {#if col === 'constName'}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (129:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}
+    // (146:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}
     function create_each_block_2(key_1, ctx) {
     	let first;
     	let current_block_type_index;
@@ -95002,8 +95172,8 @@ var app = (function () {
     	const if_blocks = [];
 
     	function select_block_type(ctx, dirty) {
-    		if (/*col*/ ctx[29] === 'constName') return 0;
-    		if (/*row*/ ctx[26] === '') return 1;
+    		if (/*col*/ ctx[30] === 'constName') return 0;
+    		if (/*row*/ ctx[27] === '') return 1;
     		return 2;
     	}
 
@@ -95049,14 +95219,14 @@ var app = (function () {
     		block,
     		id: create_each_block_2.name,
     		type: "each",
-    		source: "(129:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}",
+    		source: "(146:14) {#each ['constName', 'low', 'medium', 'high'] as col (`${col}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (128:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}
+    // (145:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}
     function create_each_block_1(ctx) {
     	let each_blocks = [];
     	let each_1_lookup = new Map();
@@ -95064,7 +95234,7 @@ var app = (function () {
     	let current;
     	let each_value_2 = ['constName', 'low', 'medium', 'high'];
     	validate_each_argument(each_value_2);
-    	const get_key = ctx => `${/*col*/ ctx[29]}-${/*row*/ ctx[26]}`;
+    	const get_key = ctx => `${/*col*/ ctx[30]}-${/*row*/ ctx[27]}`;
     	validate_each_keys(ctx, each_value_2, get_each_context_2, get_key);
 
     	for (let i = 0; i < 4; i += 1) {
@@ -95130,14 +95300,14 @@ var app = (function () {
     		block,
     		id: create_each_block_1.name,
     		type: "each",
-    		source: "(128:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}",
+    		source: "(145:12) {#each ['', 'wiltingpoint', 'prewiltingpoint', 'stressthreshold', 'fieldcapacity', 'saturation'] as row}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (153:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}
+    // (170:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}
     function create_each_block(key_1, ctx) {
     	let div;
     	let shapedtextfield;
@@ -95147,21 +95317,21 @@ var app = (function () {
     	let current;
 
     	function shapedtextfield_value_binding_1(value) {
-    		/*shapedtextfield_value_binding_1*/ ctx[15](value, /*kcConst*/ ctx[23]);
+    		/*shapedtextfield_value_binding_1*/ ctx[16](value, /*kcConst*/ ctx[24]);
     	}
 
     	let shapedtextfield_props = {
-    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].value,
-    		label: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].name,
-    		helperText: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].description,
+    		highlight: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value,
+    		label: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].name,
+    		helperText: /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].description,
     		helperProps: { persistent: true },
     		type: "number",
-    		input$step: /*kcConst*/ ctx[23].slice(0, 1) === 'K' ? '0.01' : '1',
+    		input$step: /*kcConst*/ ctx[24].slice(0, 1) === 'K' ? '0.01' : '1',
     		input$min: "0"
     	};
 
-    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].value !== void 0) {
-    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].value;
+    	if (/*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value !== void 0) {
+    		shapedtextfield_props.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value;
     	}
 
     	shapedtextfield = new ShapedTextfield({
@@ -95178,8 +95348,8 @@ var app = (function () {
     			div = element("div");
     			create_component(shapedtextfield.$$.fragment);
     			t = space();
-    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[23] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"));
-    			add_location(div, file$1, 153, 14, 6422);
+    			attr_dev(div, "class", div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[24] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"));
+    			add_location(div, file$1, 170, 14, 7182);
     			this.first = div;
     		},
     		m: function mount(target, anchor) {
@@ -95191,20 +95361,20 @@ var app = (function () {
     		p: function update(new_ctx, dirty) {
     			ctx = new_ctx;
     			const shapedtextfield_changes = {};
-    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].value;
-    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.label = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].name;
-    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.helperText = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].description;
-    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.input$step = /*kcConst*/ ctx[23].slice(0, 1) === 'K' ? '0.01' : '1';
+    			if (dirty[0] & /*localDevOptions, $devOptions*/ 5) shapedtextfield_changes.highlight = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value !== /*$devOptions*/ ctx[0].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value;
+    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.label = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].name;
+    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.helperText = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].description;
+    			if (dirty[0] & /*localDevOptions*/ 4) shapedtextfield_changes.input$step = /*kcConst*/ ctx[24].slice(0, 1) === 'K' ? '0.01' : '1';
 
     			if (!updating_value && dirty[0] & /*localDevOptions*/ 4) {
     				updating_value = true;
-    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[23]].value;
+    				shapedtextfield_changes.value = /*localDevOptions*/ ctx[2].soilmoistureoptions.kc[/*kcConst*/ ctx[24]].value;
     				add_flush_callback(() => updating_value = false);
     			}
 
     			shapedtextfield.$set(shapedtextfield_changes);
 
-    			if (!current || dirty[0] & /*localDevOptions*/ 4 && div_class_value !== (div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[23] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"))) {
+    			if (!current || dirty[0] & /*localDevOptions*/ 4 && div_class_value !== (div_class_value = "" + (null_to_empty(/*kcConst*/ ctx[24] === 'Kcend' ? 'span2' : '') + " svelte-z75n2m"))) {
     				attr_dev(div, "class", div_class_value);
     			}
     		},
@@ -95227,14 +95397,14 @@ var app = (function () {
     		block,
     		id: create_each_block.name,
     		type: "each",
-    		source: "(153:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}",
+    		source: "(170:12) {#each Object.keys(localDevOptions.soilmoistureoptions.kc) as kcConst (kcConst)}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (216:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
+    // (233:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >
     function create_default_slot_1(ctx) {
     	let t;
 
@@ -95254,14 +95424,14 @@ var app = (function () {
     		block,
     		id: create_default_slot_1.name,
     		type: "slot",
-    		source: "(216:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
+    		source: "(233:10) <Button             btnType='orange'             onClick={handleUpdateOptions}             style='margin: 0 auto;'             disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&               JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}             disabledText='No changes to submit'           >",
     		ctx
     	});
 
     	return block;
     }
 
-    // (108:6) <OptionsContainer sectionName='Development Only'>
+    // (125:6) <OptionsContainer sectionName='Development Only'>
     function create_default_slot(ctx) {
     	let div1;
     	let h40;
@@ -95303,7 +95473,7 @@ var app = (function () {
     	let current;
 
     	function shapedtextfield0_value_binding_1(value) {
-    		/*shapedtextfield0_value_binding_1*/ ctx[12](value);
+    		/*shapedtextfield0_value_binding_1*/ ctx[13](value);
     	}
 
     	let shapedtextfield0_props = {
@@ -95350,7 +95520,7 @@ var app = (function () {
 
     	let each_value = Object.keys(/*localDevOptions*/ ctx[2].soilmoistureoptions.kc);
     	validate_each_argument(each_value);
-    	const get_key = ctx => /*kcConst*/ ctx[23];
+    	const get_key = ctx => /*kcConst*/ ctx[24];
     	validate_each_keys(ctx, each_value, get_each_context, get_key);
 
     	for (let i = 0; i < each_value.length; i += 1) {
@@ -95360,7 +95530,7 @@ var app = (function () {
     	}
 
     	function shapedtextfield1_value_binding_1(value) {
-    		/*shapedtextfield1_value_binding_1*/ ctx[16](value);
+    		/*shapedtextfield1_value_binding_1*/ ctx[17](value);
     	}
 
     	let shapedtextfield1_props = {
@@ -95386,7 +95556,7 @@ var app = (function () {
     	binding_callbacks.push(() => bind(shapedtextfield1, 'value', shapedtextfield1_value_binding_1));
 
     	function shapedtextfield2_value_binding_1(value) {
-    		/*shapedtextfield2_value_binding_1*/ ctx[17](value);
+    		/*shapedtextfield2_value_binding_1*/ ctx[18](value);
     	}
 
     	let shapedtextfield2_props = {
@@ -95411,8 +95581,8 @@ var app = (function () {
 
     	binding_callbacks.push(() => bind(shapedtextfield2, 'value', shapedtextfield2_value_binding_1));
 
-    	function shapedtextfield3_value_binding(value) {
-    		/*shapedtextfield3_value_binding*/ ctx[18](value);
+    	function shapedtextfield3_value_binding_1(value) {
+    		/*shapedtextfield3_value_binding_1*/ ctx[19](value);
     	}
 
     	let shapedtextfield3_props = {
@@ -95433,10 +95603,10 @@ var app = (function () {
     			$$inline: true
     		});
 
-    	binding_callbacks.push(() => bind(shapedtextfield3, 'value', shapedtextfield3_value_binding));
+    	binding_callbacks.push(() => bind(shapedtextfield3, 'value', shapedtextfield3_value_binding_1));
 
     	function shapedtextfield4_value_binding(value) {
-    		/*shapedtextfield4_value_binding*/ ctx[19](value);
+    		/*shapedtextfield4_value_binding*/ ctx[20](value);
     	}
 
     	let shapedtextfield4_props = {
@@ -95518,24 +95688,24 @@ var app = (function () {
     			t14 = space();
     			div8 = element("div");
     			create_component(button.$$.fragment);
-    			add_location(h40, file$1, 109, 10, 4420);
+    			add_location(h40, file$1, 126, 10, 5180);
     			attr_dev(div0, "class", "other-vars svelte-z75n2m");
-    			add_location(div0, file$1, 110, 10, 4473);
-    			add_location(div1, file$1, 108, 8, 4404);
-    			add_location(h41, file$1, 125, 10, 4980);
+    			add_location(div0, file$1, 127, 10, 5233);
+    			add_location(div1, file$1, 125, 8, 5164);
+    			add_location(h41, file$1, 142, 10, 5740);
     			attr_dev(div2, "class", "smo-grid svelte-z75n2m");
-    			add_location(div2, file$1, 126, 10, 5034);
-    			add_location(div3, file$1, 124, 8, 4964);
-    			add_location(h42, file$1, 150, 10, 6245);
+    			add_location(div2, file$1, 143, 10, 5794);
+    			add_location(div3, file$1, 141, 8, 5724);
+    			add_location(h42, file$1, 167, 10, 7005);
     			attr_dev(div4, "class", "kc-grid svelte-z75n2m");
-    			add_location(div4, file$1, 151, 10, 6293);
-    			add_location(div5, file$1, 149, 8, 6229);
-    			add_location(h43, file$1, 169, 10, 7203);
+    			add_location(div4, file$1, 168, 10, 7053);
+    			add_location(div5, file$1, 166, 8, 6989);
+    			add_location(h43, file$1, 186, 10, 7963);
     			attr_dev(div6, "class", "other-vars svelte-z75n2m");
-    			add_location(div6, file$1, 170, 10, 7238);
-    			add_location(div7, file$1, 168, 8, 7187);
+    			add_location(div6, file$1, 187, 10, 7998);
+    			add_location(div7, file$1, 185, 8, 7947);
     			set_style(div8, "margin-top", "24px");
-    			add_location(div8, file$1, 214, 8, 8920);
+    			add_location(div8, file$1, 231, 8, 9680);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div1, anchor);
@@ -95684,7 +95854,7 @@ var app = (function () {
     			const button_changes = {};
     			if (dirty[0] & /*localDevOptions, $devOptions, localUserOptions, $userOptions*/ 15) button_changes.disabled = JSON.stringify(/*localDevOptions*/ ctx[2]) === JSON.stringify(/*$devOptions*/ ctx[0]) && JSON.stringify(/*localUserOptions*/ ctx[3]) === JSON.stringify(/*$userOptions*/ ctx[1]);
 
-    			if (dirty[1] & /*$$scope*/ 2) {
+    			if (dirty[1] & /*$$scope*/ 4) {
     				button_changes.$$scope = { dirty, ctx };
     			}
 
@@ -95757,7 +95927,7 @@ var app = (function () {
     		block,
     		id: create_default_slot.name,
     		type: "slot",
-    		source: "(108:6) <OptionsContainer sectionName='Development Only'>",
+    		source: "(125:6) <OptionsContainer sectionName='Development Only'>",
     		ctx
     	});
 
@@ -95778,7 +95948,7 @@ var app = (function () {
     			t = space();
     			if (if_block1) if_block1.c();
     			set_style(div, "margin-bottom", "50px");
-    			add_location(div, file$1, 44, 0, 1300);
+    			add_location(div, file$1, 49, 0, 1597);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -95876,7 +96046,7 @@ var app = (function () {
     	validate_store(userOptions, 'userOptions');
     	component_subscribe($$self, userOptions, $$value => $$invalidate(1, $userOptions = $$value));
     	validate_store(activeLocationId, 'activeLocationId');
-    	component_subscribe($$self, activeLocationId, $$value => $$invalidate(20, $activeLocationId = $$value));
+    	component_subscribe($$self, activeLocationId, $$value => $$invalidate(21, $activeLocationId = $$value));
     	validate_store(soilCharacteristics, 'soilCharacteristics');
     	component_subscribe($$self, soilCharacteristics, $$value => $$invalidate(4, $soilCharacteristics = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
@@ -95897,6 +96067,16 @@ var app = (function () {
     	};
 
     	function handleUpdateOptions() {
+    		if ($userOptions.rootDepth !== localUserOptions.rootDepth) {
+    			$$invalidate(2, localDevOptions = {
+    				...localDevOptions,
+    				soilmoistureoptions: {
+    					...localDevOptions.soilmoistureoptions,
+    					...calcSoilConstants(localUserOptions.rootDepth)
+    				}
+    			});
+    		}
+
     		set_store_value(userOptions, $userOptions = localUserOptions, $userOptions);
     		set_store_value(devOptions, $devOptions = localDevOptions, $devOptions);
     	}
@@ -95932,20 +96112,27 @@ var app = (function () {
     	}
 
     	function shapedtextfield0_value_binding(value) {
+    		if ($$self.$$.not_equal(localUserOptions.rootDepth, value)) {
+    			localUserOptions.rootDepth = value;
+    			$$invalidate(3, localUserOptions);
+    		}
+    	}
+
+    	function shapedtextfield1_value_binding(value) {
     		if ($$self.$$.not_equal(localUserOptions.initialOrganicMatter, value)) {
     			localUserOptions.initialOrganicMatter = value;
     			$$invalidate(3, localUserOptions);
     		}
     	}
 
-    	function shapedtextfield1_value_binding(value) {
+    	function shapedtextfield2_value_binding(value) {
     		if ($$self.$$.not_equal(localUserOptions.plantingDate, value)) {
     			localUserOptions.plantingDate = value;
     			$$invalidate(3, localUserOptions);
     		}
     	}
 
-    	function shapedtextfield2_value_binding(value) {
+    	function shapedtextfield3_value_binding(value) {
     		if ($$self.$$.not_equal(localUserOptions.terminationDate, value)) {
     			localUserOptions.terminationDate = value;
     			$$invalidate(3, localUserOptions);
@@ -95989,7 +96176,7 @@ var app = (function () {
     		}
     	}
 
-    	function shapedtextfield3_value_binding(value) {
+    	function shapedtextfield3_value_binding_1(value) {
     		if ($$self.$$.not_equal(localDevOptions.q10, value)) {
     			localDevOptions.q10 = value;
     			$$invalidate(2, localDevOptions);
@@ -96016,6 +96203,7 @@ var app = (function () {
     		activeLocationId,
     		endDate,
     		updateOptionsInStorage,
+    		calcSoilConstants,
     		localDevOptions,
     		localUserOptions,
     		updateLocalDevOptions,
@@ -96060,13 +96248,14 @@ var app = (function () {
     		shapedtextfield0_value_binding,
     		shapedtextfield1_value_binding,
     		shapedtextfield2_value_binding,
+    		shapedtextfield3_value_binding,
     		shapedtextfield0_value_binding_1,
     		func_1,
     		shapedtextfield_value_binding,
     		shapedtextfield_value_binding_1,
     		shapedtextfield1_value_binding_1,
     		shapedtextfield2_value_binding_1,
-    		shapedtextfield3_value_binding,
+    		shapedtextfield3_value_binding_1,
     		shapedtextfield4_value_binding
     	];
     }

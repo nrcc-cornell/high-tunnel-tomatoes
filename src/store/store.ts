@@ -2,7 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import asyncDerived from '../lib/asyncDerived';
 import { getSoilCharacteristics } from '../lib/soilCharacteristics';
 import { getWeatherData } from '../lib/weatherData';
-import { handleRunNutrientModel, SOIL_DATA } from '../lib/devNutrientModel';
+import { handleRunNutrientModel, SOIL_DATA, calcSoilConstants } from '../lib/devNutrientModel';
 import { constructWaterChartDetails, constructNitrogenChartDetails } from '../lib/chartParts';
 import { loadActiveLocationId, loadLocations, loadOptions } from '../lib/handleStorage';
 import type { LocationObj } from '../global';
@@ -76,8 +76,13 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
           newUO.applications[d].slowN = [['Other Slow Nitrogen', slowN]];
         });
       }
+
+      if (!Object.keys(newUO).includes('rootDepth')) {
+        newUO.rootDepth = 18;
+      }
     } else if (newSC) {
       newUO = {
+        rootDepth: 18,
         waterCapacity: newSC.waterCapacity,
         initialOrganicMatter: newSC.organicMatter,
         plantingDate: null,
@@ -138,13 +143,16 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
     if (get(userOptions) === null && newUO === null) {
       changeLoading('nutrientModel', false);
     }
+
+    const devO = get(devOptions);
+    devOptions.set({ ...devO, soilmoistureoptions: { ...devO.soilmoistureoptions, ...calcSoilConstants(newUO.rootDepth) } });
     userOptions.set(newUO);
   }
   changeLoading('soilCharacteristics', false);
   return newSC;
 }, null);
 
-export const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA)));
+export const devOptions = writable(JSON.parse(JSON.stringify(SOIL_DATA())));
 export let userOptions = writable(null);
 
 // Run the nutrient model when options or precip/PET data change
@@ -172,6 +180,7 @@ export const nutrientData = derived([devOptions, userOptions, weatherData], ([$d
     const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, $userOptions.applications, $weatherData.dates, plantingDateIdx, terminationDateIdx);
     const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $weatherData.dates, plantingDateIdx, terminationDateIdx);
 
+    console.log(nmRes, vwcChartDetails, tinChartDetails)
     results = { ...nmRes, ...vwcChartDetails, ...tinChartDetails };
   }
   if ($devOptions && $userOptions && $weatherData !== null) {
@@ -188,7 +197,7 @@ export const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
   if ($hoverIdxPos === null) return null;
 
   const { applications, testResults } = get(userOptions);
-  const { dates, vwc, tin, fastN, mediumN, slowN } = get(nutrientData);
+  const { dates, vwc, tin, fastN, mediumN, slowN, leached } = get(nutrientData);
 
   const date = dates[$hoverIdxPos];
   const vwcValue = vwc[$hoverIdxPos];
@@ -196,6 +205,7 @@ export const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
   const fastNPpmValue = fastN[$hoverIdxPos];
   const mediumNPpmValue = mediumN[$hoverIdxPos];
   const slowNPpmValue = slowN[$hoverIdxPos];
+  const leachedNLbsValue = slowN[$hoverIdxPos];
   const application = Object.values(applications).find((obj: {date: string}) => obj.date === date);
   const testResult = Object.values(testResults).find((obj: {date: string}) => obj.date === date);
 
@@ -206,6 +216,7 @@ export const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
     fastN: { ppm: fastNPpmValue, lbsPerAcre: fastNPpmValue * 2 },
     mediumN: { ppm: mediumNPpmValue, lbsPerAcre: mediumNPpmValue * 2 },
     slowN: { ppm: slowNPpmValue, lbsPerAcre: slowNPpmValue * 2 },
+    leached: { ppm: leachedNLbsValue / 2, lbsPerAcre: leachedNLbsValue },
     application: application || null,
     testResult: testResult || null
   };

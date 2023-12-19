@@ -104,6 +104,7 @@ export default function balanceNitrogen(
     fastN: adjustForExtraMineralization(otherRemoved, fastN),
     mediumN: adjustForExtraMineralization(otherRemoved, mediumN),
     slowN: adjustForExtraMineralization(otherRemoved, slowN),
+    leached: Math.max(Math.round(qnLbs * 1000) / 1000,0),
     tableOut: [
       date,
       Math.round(tin * 100000) / 100000,

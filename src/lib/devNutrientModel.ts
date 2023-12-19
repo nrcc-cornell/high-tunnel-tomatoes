@@ -20,81 +20,89 @@ type SoilCharacteristics = {
 
 // soildata:
 // soil moisture and drainage characteristics for different levels of soil water capacity
-// const timesSixInch = 2;
-const timesSixInch = 3;
-const rounder = 100;
-const multiplier = timesSixInch * rounder;
-export const SOIL_DATA = {
-  soilmoistureoptions: {
+// defaults to 18" soil column
+
+export const calcSoilConstants = (inches) => {
+  const rounder = 100;
+  const calcConstant = (base) => Math.round(base * (inches / 6) * rounder) / rounder;  // base values are for 6" column
+  return {
     low: {
-      wiltingpoint: Math.round(0.4 * multiplier) / rounder,
-      prewiltingpoint: Math.round(0.64 * multiplier) / rounder,
-      stressthreshold: Math.round(0.8 * multiplier) / rounder,
-      fieldcapacity: Math.round(1.2 * multiplier) / rounder,
-      saturation: Math.round(2.6 * multiplier) / rounder
+      wiltingpoint: calcConstant(0.4),
+      prewiltingpoint: calcConstant(0.64),
+      stressthreshold: calcConstant(0.8),
+      fieldcapacity: calcConstant(1.2),
+      saturation: calcConstant(2.6)
     },
     medium: {
-      wiltingpoint: Math.round(0.6 * multiplier) / rounder,
-      prewiltingpoint: Math.round(0.945 * multiplier) / rounder,
-      stressthreshold: Math.round(1.175 * multiplier) / rounder,
-      fieldcapacity: Math.round(1.75 * multiplier) / rounder,
-      saturation: Math.round(2.9 * multiplier) / rounder
+      wiltingpoint: calcConstant(0.6),
+      prewiltingpoint: calcConstant(0.945),
+      stressthreshold: calcConstant(1.175),
+      fieldcapacity: calcConstant(1.75),
+      saturation: calcConstant(2.9)
     },
     high: {
-      wiltingpoint: Math.round(0.85 * multiplier) / rounder,
-      prewiltingpoint: Math.round(1.30 * multiplier) / rounder,
-      stressthreshold: Math.round(1.6 * multiplier) / rounder,
-      fieldcapacity: Math.round(2.35 * multiplier) / rounder,
-      saturation: Math.round(3.25 * multiplier) / rounder
+      wiltingpoint: calcConstant(0.85),
+      prewiltingpoint: calcConstant(1.30),
+      stressthreshold: calcConstant(1.6),
+      fieldcapacity: calcConstant(2.35),
+      saturation: calcConstant(3.25)
+    }
+  }
+}
+
+export const SOIL_DATA = (inches=18) => {
+  return {
+    soilmoistureoptions: {
+      ...calcSoilConstants(inches),
+      kc: {
+        Lini: {
+          name: 'Initial Growth Stage Length',
+          value: 30,
+          description: 'length (days) of initial growth stage'
+        },
+        Ldev: {
+          name: 'Development Growth Stage Length',
+          value: 40,
+          description: 'length (days) of development growth stage'
+        },
+        Lmid: {
+          name: 'Mature Growth Stage Length',
+          value: 80,
+          description: 'length (days) of middle (mature) growth stage'
+        },
+        Llate: {
+          name: 'Late Growth Stage Length',
+          value: 30,
+          description: 'length (days) of late growth stage'
+        },
+        Kcini: {
+          name: 'Initial Growth Stage Crop Coefficient',
+          value: 0.60,
+          description: 'crop coefficient for initial growth stage'
+        },
+        Kcmid: {
+          name: 'Mature Growth Stage Crop Coefficient',
+          value: 1.15,
+          description: 'crop coefficient for middle (mature) growth stage'
+        },
+        Kcend: {
+          name: 'End of Season Crop Coefficient',
+          value: 0.80,
+          description: 'crop coefficient at end of growing season'
+        }
+      },
+      p: 0.5,
+      petAdj: 0.55
     },
-    kc: {
-      Lini: {
-        name: 'Initial Growth Stage Length',
-        value: 30,
-        description: 'length (days) of initial growth stage'
-      },
-      Ldev: {
-        name: 'Development Growth Stage Length',
-        value: 40,
-        description: 'length (days) of development growth stage'
-      },
-      Lmid: {
-        name: 'Mature Growth Stage Length',
-        value: 80,
-        description: 'length (days) of middle (mature) growth stage'
-      },
-      Llate: {
-        name: 'Late Growth Stage Length',
-        value: 30,
-        description: 'length (days) of late growth stage'
-      },
-      Kcini: {
-        name: 'Initial Growth Stage Crop Coefficient',
-        value: 0.60,
-        description: 'crop coefficient for initial growth stage'
-      },
-      Kcmid: {
-        name: 'Mature Growth Stage Crop Coefficient',
-        value: 1.15,
-        description: 'crop coefficient for middle (mature) growth stage'
-      },
-      Kcend: {
-        name: 'End of Season Crop Coefficient',
-        value: 0.80,
-        description: 'crop coefficient at end of growing season'
-      }
+    soildrainageoptions: {
+      low: { daysToDrainToFcFromSat: 0.125 },
+      medium: { daysToDrainToFcFromSat: 1.0 },
+      high: { daysToDrainToFcFromSat: 2.0 },
     },
-    p: 0.5,
-    petAdj: 0.55
-  },
-  soildrainageoptions: {
-    low: { daysToDrainToFcFromSat: 0.125 },
-    medium: { daysToDrainToFcFromSat: 1.0 },
-    high: { daysToDrainToFcFromSat: 2.0 },
-  },
-  somKN: 0.000083,
-  q10: 2,
-  tempO: 20
+    somKN: 0.000083,
+    q10: 2,
+    tempO: 20
+  }
 };
 
 function getCropCoeff(hasPlants, numdays, devSD) {
@@ -227,21 +235,6 @@ function runNutrientModel(
   // -----------------------------------------------------------------------------------------
   const { soilmoistureoptions: soil_options, somKN, q10, tempO } = devSD;
   
-  
-  
-
-
-
-
-  // use these to calc mineralization adjustment
-  // pass adjustment into balanaceNitrogen()
-  console.log(q10, tempO, soilTemp);
-  
-
-
-
-
-  
   // Calculate number of days since planting, negative value means current days in loop below is before planting
   let daysSincePlanting =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - plantingDate.getTime() ) / 86400000);
   let daysSinceTermination =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - terminationDate.getTime() ) / 86400000);
@@ -256,6 +249,7 @@ function runNutrientModel(
   let fastN = [];
   let mediumN = [];
   let slowN = [];
+  let leached = 0;
   let tableOut;
 
   // Initialize output arrays
@@ -265,6 +259,7 @@ function runNutrientModel(
   const fastDaily = [];
   const mediumDaily = [];
   const slowDaily = [];
+  const leachedDaily = [];
   const table = [[
     'Date',
     'Start Inorg. N.',
@@ -362,7 +357,7 @@ function runNutrientModel(
     const vwc = (deficit + fc) / 18;
     const mineralizationAdjustmentFactor = q10 ** ((soilTemp[idx] - tempO) / 10);
     const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
-    ({tin, som, fastN, mediumN, slowN, tableOut} = balanceNitrogen(
+    ({tin, som, fastN, mediumN, slowN, leached, tableOut} = balanceNitrogen(
       vwc,
       fc / 18,
       mp,
@@ -385,6 +380,7 @@ function runNutrientModel(
     fastDaily.push(Math.round((fastN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
     mediumDaily.push(Math.round((mediumN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
     slowDaily.push(Math.round((slowN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
+    leachedDaily.push(leached);
     table.push(tableOut);
   }
 
@@ -394,6 +390,7 @@ function runNutrientModel(
     fastN: fastDaily,
     mediumN: mediumDaily,
     slowN: slowDaily,
+    leached: leachedDaily,
     table
     // dd
   };

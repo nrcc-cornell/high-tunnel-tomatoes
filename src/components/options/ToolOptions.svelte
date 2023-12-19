@@ -8,6 +8,7 @@
   
   import { devOptions, userOptions, soilCharacteristics, activeLocationId, endDate } from "../../store/store";
   import { updateOptionsInStorage } from "../../lib/handleStorage";
+  import { calcSoilConstants } from "../../lib/devNutrientModel";
 
   let localDevOptions = null;
   let localUserOptions = null;
@@ -26,6 +27,10 @@
   $: $userOptions, updateLocalUserOptions();
 
   function handleUpdateOptions() {
+    if ($userOptions.rootDepth !== localUserOptions.rootDepth) {
+      localDevOptions = {...localDevOptions, soilmoistureoptions: {...localDevOptions.soilmoistureoptions, ...calcSoilConstants(localUserOptions.rootDepth)}};
+    }
+
     $userOptions = localUserOptions;
     $devOptions = localDevOptions;
   }
@@ -55,6 +60,17 @@
             options={waterCapacityOptions}
           />
           <ShapedTextfield
+            bind:value={localUserOptions.rootDepth}
+            highlight={localUserOptions.rootDepth !== $userOptions.rootDepth}
+            label='Root Zone Depth (in)'
+            helperText='Depth that plants have access to soil moisture'
+            helperProps={{ persistent: true }}
+            suffix='in'
+            type='number'
+            input$min='0'
+            input$max='100'
+          />
+          <ShapedTextfield
             bind:value={localUserOptions.initialOrganicMatter}
             highlight={localUserOptions.initialOrganicMatter !== $userOptions.initialOrganicMatter}
             label='Initial Organic Matter'
@@ -64,6 +80,7 @@
             type='number'
             input$min='0'
             input$max='100'
+            input$step='1.0'
           />
           <ShapedTextfield
             bind:value={localUserOptions.plantingDate}

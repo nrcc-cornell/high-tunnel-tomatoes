@@ -2,6 +2,7 @@ const APP_NAME = 'high-tunnel-tomatoes';
 const LOCATIONS_KEY = 'locations';
 const ACTIVE_LOCATION_ID_KEY = 'active-location-id';
 const OPTIONS_KEY = 'options';
+const DEV_OPTIONS_KEY = 'dev_options';
 
 function setStorage(key, newValue) {
   localStorage.setItem(`${APP_NAME}-${key}`, JSON.stringify(newValue));
@@ -74,4 +75,12 @@ function updateOptionsInStorage(locId, newOptions) {
 }
 
 
-export { loadOptions, loadLocations, loadActiveLocationId, addLocationToStorage, removeLocationFromStorage, updateActiveLocationIdInStorage, updateOptionsInStorage };
+export {
+  loadOptions,
+  loadLocations,
+  loadActiveLocationId,
+  addLocationToStorage,
+  removeLocationFromStorage,
+  updateActiveLocationIdInStorage,
+  updateOptionsInStorage
+};

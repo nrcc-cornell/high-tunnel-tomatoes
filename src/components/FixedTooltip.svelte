@@ -17,6 +17,10 @@
     title: 'Slow Org. N.',
     key: 'slowN',
     appKey: 'slowN'
+  },{
+    title: 'Leached N.',
+    key: 'leached',
+    appKey: 'leached'
   }];
 
   $: console.log($tooltipData);
@@ -40,7 +44,13 @@
       <p class='row-header'>{title}</p>
       <p>{Math.round($tooltipData[key].ppm)}ppm ({Math.round($tooltipData[key].lbsPerAcre)}lbs/acre)</p>
       {#if $tooltipData.application}
-        <p>{Math.round(key === 'tin' ? $tooltipData.application.inorganicN : $tooltipData.application[key].reduce((acc, arr) => acc += arr[1], 0))}lbs/acre</p>
+        {#if key === 'tin'}
+          <p>{Math.round($tooltipData.application.inorganicN)}lbs/acre</p>
+        {:else if key === 'leached'}
+          <p>-</p>
+        {:else}
+          <p>{Math.round($tooltipData.application[key].reduce((acc, arr) => acc += arr[1], 0))}lbs/acre</p>
+        {/if}
       {/if}
     {/each}
 
