@@ -4,24 +4,41 @@
   import Loading from "./components/Loading.svelte";
 	import LocationPicker from "./components/locationPicker/LocationPicker.svelte";
   import ToolOptions from "./components/options/ToolOptions.svelte";
-	import { soilCharacteristics, weatherData, nutrientData, isLoadingData, devOptions, userOptions } from "./store/store";
+	import Toast from "./components/Toast.svelte";
 
-	// $: console.log('APP SOILCHARACTERISTICS: ', $soilCharacteristics);
-	// $: console.log('APP WATERDATA: ', $weatherData);
-	// $: console.log('APP NUTRIENTDATA: ', $nutrientData);
-	// $: console.log('APP DEVOPTIONS: ', $devOptions);
-	// $: console.log('APP USEROPTIONS: ', $userOptions);
-	// $: console.log('APP ISLOADINGDATA: ', JSON.stringify($isLoadingData, null, 2));
+	import { soilCharacteristics, isLoadingData, userOptions, locations, activeLocationId } from "./store/store";
+	import { notifications } from "./store/notifications";
+	
+	import { overwriteStorage } from "./lib/handleStorage";
 
+	function loadBackup(files) {
+		const reader = new FileReader();
+		reader.onload = async (e) => {
+			try {
+				const decoded = atob(e.target.result as string);
+				const { activeLocationId: newALI, locations: newLocs, options: newOpts } = JSON.parse(decoded);
+				overwriteStorage(newLocs, newALI, newOpts);
+				$locations = newLocs;
+				$activeLocationId = newALI;
+				$userOptions = newOpts[newALI];
+				notifications.success('Uploaded backup successfully', 3000);
+			} catch (e) {
+				console.error(e);
+				notifications.danger('Upload failed', 3000);
+			}
+		}
+		reader.readAsText(files[0]);
+	}
 </script>
 
 <main>
 	<h1>High Tunnel Tomatoes</h1>
 
 	<LocationPicker />
-	<ToolOptions />
+	<ToolOptions {loadBackup} />
 	<LineCharts />
 	<DataTable />
+	<Toast />
 
 	{#if Object.values($isLoadingData).includes(true)}
 		<Loading />

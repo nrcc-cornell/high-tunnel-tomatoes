@@ -5,13 +5,24 @@
   import Button from "../Button.svelte";
   import TestResults from "./TestResults.svelte";
   import Applications from "./Applications.svelte";
+
+  import UploadSolid from './upload-solid.svelte';
+  import DownloadSolid from "./download-solid.svelte";
   
   import { devOptions, userOptions, soilCharacteristics, activeLocationId, endDate } from "../../store/store";
-  import { updateOptionsInStorage } from "../../lib/handleStorage";
+  import { updateOptionsInStorage, backUpOptionsToFile } from "../../lib/handleStorage";
   import { calcSoilConstants } from "../../lib/devNutrientModel";
 
+  export let loadBackup = (a) => null;
   let localDevOptions = null;
   let localUserOptions = null;
+  
+  let files;
+  $: if (files) {
+    if (confirm('WARNING: This will overwrite all current locations and options. If you want to save your current locations and options, please use the back up button first. Continue?')) {
+      loadBackup(files);
+    }
+  }
 
   const updateLocalDevOptions = () => {
     localDevOptions = JSON.parse(JSON.stringify($devOptions));
@@ -33,6 +44,10 @@
 
     $userOptions = localUserOptions;
     $devOptions = localDevOptions;
+  }
+
+  function handleBackUpOptionsToFile() {
+    backUpOptionsToFile();
   }
 
   const waterCapacityOptions = [{
@@ -242,9 +257,52 @@
       </OptionsContainer>
     </div>
   {/if}
+  {#if $userOptions}
+    <div style='width: 925px; margin: 0 auto;'>
+      <OptionsContainer sectionName='Data Management'>
+        <div class='btns-container'>
+          <Button>
+            <div class='icon-in-btn'>
+              <UploadSolid />
+              <label for="file-upload">Load Options/Locations From File ('.dat')</label>
+              <input accept='.dat' id='file-upload' bind:files type="file" />
+            </div>
+          </Button>
+          <Button onClick={handleBackUpOptionsToFile}>
+            <div class='icon-in-btn'>
+              <DownloadSolid />
+              <div>Download Options/Locations To Backup File</div>
+            </div>
+          </Button>
+        </div>
+      </OptionsContainer>
+    </div>
+  {/if}
 </div>
 
 <style lang='scss'>
+  .btns-container {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+
+    .icon-in-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+  
+      label {
+        &:hover {
+          cursor: pointer;
+        }
+      }
+    
+      input {
+        display: none;
+      }
+    }
+  }
+
   .kc-grid,
   .smo-grid {
     display: grid;

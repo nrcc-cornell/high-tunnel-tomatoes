@@ -2,7 +2,6 @@ const APP_NAME = 'high-tunnel-tomatoes';
 const LOCATIONS_KEY = 'locations';
 const ACTIVE_LOCATION_ID_KEY = 'active-location-id';
 const OPTIONS_KEY = 'options';
-const DEV_OPTIONS_KEY = 'dev_options';
 
 function setStorage(key, newValue) {
   localStorage.setItem(`${APP_NAME}-${key}`, JSON.stringify(newValue));
@@ -74,6 +73,26 @@ function updateOptionsInStorage(locId, newOptions) {
   setStorage(OPTIONS_KEY, options);
 }
 
+async function overwriteStorage(locations, activeLocationId, options) {
+  setStorage(LOCATIONS_KEY, locations);
+  setStorage(ACTIVE_LOCATION_ID_KEY, activeLocationId);
+  setStorage(OPTIONS_KEY, options);
+}
+
+function backUpOptionsToFile() {
+  const options = loadOptions();
+  const activeLocationId = loadActiveLocationId();
+  const locations = loadLocations();
+
+  const objStr = JSON.stringify({ options, activeLocationId, locations });
+  const encoded = btoa(objStr);
+
+  var a = document.createElement("a");
+  var file = new Blob([encoded], {type: 'application/octet-stream'});
+  a.href = URL.createObjectURL(file);
+  a.download = 'high-tunnel-backup.dat';
+  a.click();
+}
 
 export {
   loadOptions,
@@ -82,5 +101,7 @@ export {
   addLocationToStorage,
   removeLocationFromStorage,
   updateActiveLocationIdInStorage,
-  updateOptionsInStorage
+  updateOptionsInStorage,
+  overwriteStorage,
+  backUpOptionsToFile
 };

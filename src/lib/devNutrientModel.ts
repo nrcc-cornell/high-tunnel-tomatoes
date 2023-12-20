@@ -239,6 +239,8 @@ function runNutrientModel(
   let daysSincePlanting =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - plantingDate.getTime() ) / 86400000);
   let daysSinceTermination =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - terminationDate.getTime() ) / 86400000);
   
+  console.log(soil_options, soilcap);
+
   // Initialize running tally of the amount of water in the soil
   let deficit = 0;
   const fc = soil_options[soilcap].fieldcapacity;
