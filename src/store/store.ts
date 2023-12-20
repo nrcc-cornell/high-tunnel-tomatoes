@@ -9,6 +9,7 @@ import type { LocationObj } from '../global';
 
 let todayDate = new Date();
 export const endDate = todayDate.toISOString().slice(0,10);
+export const isDevelopment = window.location.href !== 'PUT PRODUCTION URL HERE';
 
 // Handle showing loading screen
 export const isLoadingLocation = writable(false);
@@ -153,7 +154,7 @@ export const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
   const fastNPpmValue = fastN[$hoverIdxPos];
   const mediumNPpmValue = mediumN[$hoverIdxPos];
   const slowNPpmValue = slowN[$hoverIdxPos];
-  const leachedNLbsValue = slowN[$hoverIdxPos];
+  const leachedNLbsValue = leached[$hoverIdxPos];
   const application = Object.values(applications).find((obj: {date: string}) => obj.date === date);
   const testResult = Object.values(testResults).find((obj: {date: string}) => obj.date === date);
 

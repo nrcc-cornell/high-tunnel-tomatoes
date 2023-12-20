@@ -9,11 +9,11 @@
   import Upload from "svelte-material-icons/Upload.svelte";
   import Download from "svelte-material-icons/Download.svelte";
   
-  import { devOptions, userOptions, soilCharacteristics, activeLocationId, endDate } from "../../store/store";
-  import { updateOptionsInStorage, backUpOptionsToFile } from "../../lib/handleStorage";
+  import { devOptions, userOptions, soilCharacteristics, activeLocationId, locations, endDate, isDevelopment } from "../../store/store";
+  import { notifications } from "../../store/notifications";
+  import { updateOptionsInStorage, backUpOptionsToFile, overwriteStorage } from "../../lib/handleStorage";
   import { calcSoilConstants } from "../../lib/devNutrientModel";
 
-  export let loadBackup = (a) => null;
   let localDevOptions = null;
   let localUserOptions = null;
   
@@ -50,6 +50,26 @@
   function handleBackUpOptionsToFile() {
     backUpOptionsToFile();
   }
+
+  function loadBackup(files) {
+		const reader = new FileReader();
+		reader.onload = async (e) => {
+			try {
+				const decoded = atob(e.target.result);
+				const { activeLocationId: newALI, locations: newLocs, options: newOpts } = JSON.parse(decoded);
+				overwriteStorage(newLocs, newALI, newOpts);
+				$locations = newLocs;
+				$activeLocationId = newALI;
+				$userOptions = newOpts[newALI];
+        $devOptions = { ...$devOptions, soilmoistureoptions: { ...$devOptions.soilmoistureoptions, ...calcSoilConstants(newOpts[newALI].rootDepth) }}
+				notifications.success('Uploaded backup successfully', 3000);
+			} catch (e) {
+				console.error(e);
+				notifications.danger('Upload failed', 3000);
+			}
+		}
+		reader.readAsText(files[0]);
+	}
 
   const waterCapacityOptions = [{
     name: 'Sand, coarse texture',
@@ -136,7 +156,7 @@
       <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'><TestResults /></OptionsContainer>
     </div>
   {/if}
-  {#if localDevOptions && $userOptions}
+  {#if localDevOptions && $userOptions && isDevelopment}
     <div style='width: 925px; margin: 0 auto;'>
       <OptionsContainer sectionName='Development Only'>
         <div>
@@ -259,7 +279,7 @@
     </div>
   {/if}
   {#if $userOptions}
-    <div style='width: 925px; margin: 0 auto;'>
+    <div class='user-options-container'>
       <OptionsContainer sectionName='Data Management'>
         <div class='btns-container'>
           <Button>
@@ -286,6 +306,7 @@
     display: flex;
     justify-content: center;
     gap: 10px;
+    flex-wrap: wrap;
 
     .icon-in-btn {
       display: flex;

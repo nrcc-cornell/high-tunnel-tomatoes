@@ -4,7 +4,6 @@
   import Button from "./Button.svelte";
 
   $: tableData = $nutrientData ? $nutrientData.table : null;
-	$: console.log($nutrientData);
 
 	const handleDownload = () => {
 		if ($nutrientData) {

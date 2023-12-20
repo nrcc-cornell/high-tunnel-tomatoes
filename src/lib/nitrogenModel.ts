@@ -72,28 +72,24 @@ export default function balanceNitrogen(
   //
   //  -------------------------------------------------------------
   
-  
   const gTheta = (fc - mp)/(vwc - mp); //// supposed to be equation from Josef
   const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
 
-
   let somLbs = convertOMPercentToLbAcre(som);
   const somMineralizedLbs = mineralizationAdjustmentFactor * gTheta * somKN * somLbs;
-  const { amountMineralized: fastMineralizedLbs, newApplicationsArray: newFastN } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, fastN);
-  const { amountMineralized: mediumMineralizedLbs, newApplicationsArray: newMediumN } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, mediumN);
-  const { amountMineralized: slowMineralizedLbs, newApplicationsArray: newSlowN } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, slowN);
-  
+  const { amountMineralized: fastMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, fastN);
+  const { amountMineralized: mediumMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, mediumN);
+  const { amountMineralized: slowMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, slowN);
   
   const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
   const tnKgs = convertLbAcreToKgM2(tnLbs);
   const tnV = calcTNV(tnKgs, plantUptakeTheta);
   const UN = hasPlants ? calcPlantUptake(tnV, pet) : 0;
   const QN = calcTransported(tnV, drainage);
-
   
   const newTinKgs = tnKgs - UN - QN;
   const newTinLbs = convertKgM2ToLbAcre(newTinKgs);
-
+  
   const unLbs = convertKgM2ToLbAcre(UN);
   const qnLbs = convertKgM2ToLbAcre(QN);
   const otherRemoved = (unLbs + qnLbs) / 4;

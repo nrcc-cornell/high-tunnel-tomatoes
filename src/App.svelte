@@ -6,38 +6,18 @@
   import ToolOptions from "./components/options/ToolOptions.svelte";
 	import Toast from "./components/Toast.svelte";
 
-	import { soilCharacteristics, isLoadingData, userOptions, locations, activeLocationId } from "./store/store";
-	import { notifications } from "./store/notifications";
-	
-	import { overwriteStorage } from "./lib/handleStorage";
-
-	function loadBackup(files) {
-		const reader = new FileReader();
-		reader.onload = async (e) => {
-			try {
-				const decoded = atob(e.target.result as string);
-				const { activeLocationId: newALI, locations: newLocs, options: newOpts } = JSON.parse(decoded);
-				overwriteStorage(newLocs, newALI, newOpts);
-				$locations = newLocs;
-				$activeLocationId = newALI;
-				$userOptions = newOpts[newALI];
-				notifications.success('Uploaded backup successfully', 3000);
-			} catch (e) {
-				console.error(e);
-				notifications.danger('Upload failed', 3000);
-			}
-		}
-		reader.readAsText(files[0]);
-	}
+	import { soilCharacteristics, isLoadingData, isDevelopment } from "./store/store";
 </script>
 
 <main>
 	<h1>High Tunnel Tomatoes</h1>
 
 	<LocationPicker />
-	<ToolOptions {loadBackup} />
+	<ToolOptions />
 	<LineCharts />
-	<DataTable />
+	{#if isDevelopment}
+		<DataTable />
+	{/if}
 	<Toast />
 
 	{#if Object.values($isLoadingData).includes(true)}

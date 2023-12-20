@@ -22,8 +22,6 @@
     key: 'leached',
     appKey: 'leached'
   }];
-
-  $: console.log($tooltipData);
 </script>
 
 {#if $tooltipData}
