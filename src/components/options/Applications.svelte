@@ -1,6 +1,7 @@
 <script>
   import SquareEditOutline from "svelte-material-icons/SquareEditOutline.svelte";
   import DeleteOutline from "svelte-material-icons/DeleteOutline.svelte";
+  import HelpCircle from 'svelte-material-icons/HelpCircle.svelte';
   import Button from "../Button.svelte";
   import Modal from "../Modal.svelte";
   import ShapedTextfield from "./ShapedTextfield.svelte";
@@ -93,6 +94,15 @@
     newEditingEvent[category].splice(amendmentIdx, 1);
     editingEvent = newEditingEvent;
   }
+
+  let showHelp = false;
+  function handleShowHelp() {
+    showHelp = true;
+  }
+
+  function handleHideHelp() {
+    showHelp = false;
+  }
 </script>
 
 {#if hasEvents}
@@ -138,6 +148,26 @@
 <Modal open={modalOpen} handleClose={closeModal}>
   <div class='editing-modal'>
     <h4 style='margin-top: 0;'>Application Event</h4>
+    <div
+      class='hover-help'
+      on:mouseenter={handleShowHelp}
+      on:mouseout={handleHideHelp}
+      on:focus={handleShowHelp}
+      on:blur={handleHideHelp}
+      role="tooltip"
+    >
+      <div style='width: fit-content; pointer-events: none; color: rgb(27,8,255);'>
+        <HelpCircle width={iconDim} height={iconDim} />
+      </div>
+      {#if showHelp}
+        <div class='conversion-help'>
+          <p>This tool uses pounds per acre as units for nitrogen. If your applications are in pounds and you know the area of your high tunnel in square feet, then you can easily convert by:</p>
+          <pre>Lbs applied / Sq.ft. of high tunnel * 43,560sq.ft./acre</pre>
+          <p>For example, if you apply 10lbs of nitrogen to a 200sq.ft. high tunnel:</p>
+          <pre>10lbs / 200sq.ft. * 43,560sq.ft./acre = 2,178lbs/acre</pre>
+        </div>
+      {/if}
+    </div>
     {#if editingEvent}
       <ShapedTextfield
         bind:value={editingEvent.date}
@@ -153,24 +183,19 @@
       <div class="application-inputs">
         <ShapedTextfield
           bind:value={editingEvent.waterAmount}
-          label='Water'
-          helperText='Amount of water added in inches'
-          helperProps={{ persistent: true }}
+          label='Water (inches)'
           type='number'
           input$step='0.01'
           input$min='0'
-          width=175
         />
 
         <ShapedTextfield
           bind:value={editingEvent.inorganicN}
-          label='Inorganic Nitrogen'
-          helperText='Amount of inorganic nitrogen added in lbs/acre'
-          helperProps={{ persistent: true }}
+          label='Inorganic Nitrogen (lbs/acre)'
           type='number'
           input$step='1'
           input$min='0'
-          width=175
+          width=220
         />
       </div>
       <div class='application-inputs' style='flex-direction: column;'>
@@ -184,13 +209,10 @@
           
           <ShapedTextfield
             bind:value={amountAdded}
-            label='Amount Applied'
-            helperText='Amount of organic amendment added in lbs/acre'
-            helperProps={{ persistent: true }}
+            label='Amount Applied (lbs/acre)'
             type='number'
             input$step='1'
             input$min='0'
-            width=175
           />
 
           <div class='add-amendment-btn'>
@@ -232,6 +254,29 @@
 </Modal>
 
 <style lang='scss'>
+  .hover-help {
+    position: absolute;
+    width: fit-content;
+    top: 6px;
+    right: 6px;
+    padding: 4px;
+
+    .conversion-help {
+      position: absolute;
+      bottom: 0px;
+      left: 0px;
+      transform: translate(-100%, 100%);
+      background-color: white;
+      border: 2px solid rgb(220,220,220);
+      padding: 12px;
+      z-index: 1;
+
+      pre {
+        text-align: center;
+      }
+    }
+  }
+
   .btns-container {
     display: flex;
     gap: 3px;

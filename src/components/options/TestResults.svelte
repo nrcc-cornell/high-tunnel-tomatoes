@@ -109,21 +109,18 @@
       <div class='org-inputs'>
         <ShapedTextfield
           bind:value={editingEvent.organicMatter}
-          label='Organic Matter'
-          helperText='Percent organic matter in soil'
-          helperProps={{ persistent: true }}
+          label='Organic Matter (%)'
           type='number'
           input$step='0.1'
           input$min='0'
         />
         <ShapedTextfield
           bind:value={editingEvent.inorganicN}
-          label='Inorganic Nitrogen'
-          helperText='Amount of inorganic nitrogen in soil (lbs/acre)'
-          helperProps={{ persistent: true }}
+          label='Inorganic Nitrogen (lbs/acre)'
           type='number'
           input$step='1'
           input$min='0'
+          width=220
         />
       </div>
       <div class='btns-container'>

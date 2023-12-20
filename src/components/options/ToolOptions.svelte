@@ -6,8 +6,8 @@
   import TestResults from "./TestResults.svelte";
   import Applications from "./Applications.svelte";
 
-  import UploadSolid from './upload-solid.svelte';
-  import DownloadSolid from "./download-solid.svelte";
+  import Upload from "svelte-material-icons/Upload.svelte";
+  import Download from "svelte-material-icons/Download.svelte";
   
   import { devOptions, userOptions, soilCharacteristics, activeLocationId, endDate } from "../../store/store";
   import { updateOptionsInStorage, backUpOptionsToFile } from "../../lib/handleStorage";
@@ -17,6 +17,7 @@
   let localDevOptions = null;
   let localUserOptions = null;
   
+  const iconDim = 20;
   let files;
   $: if (files) {
     if (confirm('WARNING: This will overwrite all current locations and options. If you want to save your current locations and options, please use the back up button first. Continue?')) {
@@ -263,14 +264,14 @@
         <div class='btns-container'>
           <Button>
             <div class='icon-in-btn'>
-              <UploadSolid />
+              <Upload width={iconDim} height={iconDim} />
               <label for="file-upload">Load Options/Locations From File ('.dat')</label>
               <input accept='.dat' id='file-upload' bind:files type="file" />
             </div>
           </Button>
           <Button onClick={handleBackUpOptionsToFile}>
             <div class='icon-in-btn'>
-              <DownloadSolid />
+              <Download width={iconDim} height={iconDim} />
               <div>Download Options/Locations To Backup File</div>
             </div>
           </Button>
