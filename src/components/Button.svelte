@@ -32,6 +32,7 @@
     white-space: nowrap;
     border-radius: 5px;
     transition: all 0.15s ease-in;
+    margin: 0;
   }
 
   .btn-default {
@@ -74,7 +75,6 @@
     padding: 3px;
     height: fit-content;
     width: fit-content;
-    margin: 0;
     
     &:hover {
       background-color: #0027c2;
@@ -89,7 +89,6 @@
     padding: 3px;
     height: fit-content;
     width: fit-content;
-    margin: 0;
     
     &:hover {
       background-color: #bb0707;
