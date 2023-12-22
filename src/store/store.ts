@@ -142,6 +142,16 @@ export const hoverIdxPos = writable(null);
 export const hoverXPos = writable(null);
 export const isZoomed = writable(true);
 
+type ApplicationEvent = {
+  date: null,
+  waterAmount: number
+  fastN: number[]
+  mediumN: number[]
+  slowN: number[]
+  inorganicN: number
+  id: string
+};
+
 export const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
   if ($hoverIdxPos === null) return null;
 
@@ -155,8 +165,28 @@ export const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
   const mediumNPpmValue = mediumN[$hoverIdxPos];
   const slowNPpmValue = slowN[$hoverIdxPos];
   const leachedNLbsValue = leached[$hoverIdxPos];
-  const application = Object.values(applications).find((obj: {date: string}) => obj.date === date);
-  const testResult = Object.values(testResults).find((obj: {date: string}) => obj.date === date);
+  const applicationList = Object.values(applications).filter((obj: ApplicationEvent) => obj.date === date) as ApplicationEvent[];
+  const testResult = Object.values(testResults).filter((obj: {date: string}) => obj.date === date);
+
+  let application = null;
+  if (applicationList.length) {
+    application = applicationList.reduce((acc, app) => {
+      if (!acc.date) acc.date = app.date;
+      acc.inorganicN += app.inorganicN;
+      acc.waterAmount += app.waterAmount;
+      acc.fastN = acc.fastN.concat(app.fastN);
+      acc.mediumN = acc.mediumN.concat(app.mediumN);
+      acc.slowN = acc.slowN.concat(app.slowN);
+      return acc;
+    }, {
+      date: '',
+      inorganicN: 0,
+      fastN: [],
+      mediumN: [],
+      slowN: [],
+      waterAmount: 0
+    });
+  }
 
   return {
     date,
@@ -166,7 +196,7 @@ export const tooltipData = derived([hoverIdxPos], ([$hoverIdxPos]) => {
     mediumN: { ppm: mediumNPpmValue, lbsPerAcre: mediumNPpmValue * 2 },
     slowN: { ppm: slowNPpmValue, lbsPerAcre: slowNPpmValue * 2 },
     leached: { ppm: leachedNLbsValue / 2, lbsPerAcre: leachedNLbsValue },
-    application: application || null,
-    testResult: testResult || null
+    application,
+    testResult: testResult.length ? testResult[testResult.length - 1] : null
   };
 }, null);

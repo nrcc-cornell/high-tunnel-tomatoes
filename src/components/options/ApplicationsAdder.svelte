@@ -150,6 +150,8 @@
   </div>
 {/if}
 
+<slot/>
+
 <style lang="scss">
   .application-inputs {
     flex-wrap: wrap;

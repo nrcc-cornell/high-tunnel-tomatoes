@@ -55,7 +55,7 @@
     <p class='row-header'>VWC</p>
     <p style='line-height: 10px;'>{$tooltipData.vwc}in<sup>3</sup>/in<sup>3</sup></p>
     {#if $tooltipData.application}
-      <p>{$tooltipData.application.waterAmount}in</p>
+      <p>{Math.round($tooltipData.application.waterAmount * 1000) / 1000}in</p>
     {/if}
   </div>
 {/if}

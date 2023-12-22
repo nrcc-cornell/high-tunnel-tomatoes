@@ -93,7 +93,6 @@ async function fetchAcisData(lat, lon, eDate) {
     fetchLocHourlyFore(lat, lon, eDate)
   ])
 
-
   while (fore.length && obs[obs.length - 1][0] === fore[0][0]) {
     fore.shift();
   }

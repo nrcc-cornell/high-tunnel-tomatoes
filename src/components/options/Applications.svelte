@@ -1,10 +1,13 @@
 <script>
+  import { v4 as uuidv4 } from 'uuid';
+
   import Button from "../Button.svelte";
   import Modal from "../Modal.svelte";
 
   import ApplicationsDisplay from "./ApplicationsDisplay.svelte";
   import ApplicationsAdder from "./ApplicationsAdder.svelte";
   import ApplicationsWaterScheduler from "./ApplicationsWaterScheduler.svelte";
+  import ApplicationsBtnsRow from "./ApplicationsBtnsRow.svelte";
 
   import { organicAmendments } from '../../lib/nitrogenHelpers';
 	import { userOptions, endDate } from "../../store/store";
@@ -34,7 +37,10 @@
 
   function updateApplications(submittedApplicationEvents) {
     const newUOs = JSON.parse(JSON.stringify($userOptions));
+    console.log(submittedApplicationEvents);
+    console.log($userOptions.applications);
     submittedApplicationEvents.forEach(event => newUOs.applications[event.id] = event);
+    console.log(newUOs.applications);
     $userOptions = newUOs;
     closeModal();
     justChanged = null;
@@ -47,7 +53,7 @@
     } else {
       editingEvent = {
         ...newApplicationEvent(),
-        id: new Date().getTime()
+        id: uuidv4()
       };
     }
     modalOpen = true;
@@ -56,9 +62,12 @@
   function closeModal() {
     modalOpen = false;
     editingEvent = null;
+    showWaterScheduler = false;
 	}
 
-  
+  function toggleShowWaterScheduler() {
+    showWaterScheduler = !showWaterScheduler;
+  }
 </script>
 
 <ApplicationsDisplay
@@ -75,24 +84,29 @@
 <Modal open={modalOpen} handleClose={closeModal}>
   <div class='editing-modal'>
     {#if showWaterScheduler}
-      <ApplicationsWaterScheduler />
+      <ApplicationsWaterScheduler
+        latestDate={endDate}
+        switcherFunc={toggleShowWaterScheduler}
+        cancelFunc={closeModal}
+        {updateApplications}
+      />
     {:else}
       <ApplicationsAdder
         bind:editingEvent
         {endDate}
         {organicAmendments}
         {iconDim}
-      />
+      >
+        <ApplicationsBtnsRow
+          switcherBtnText='Switch to Water Scheduler'
+          switcherFunc={toggleShowWaterScheduler}
+          cancelFunc={closeModal}
+          submitFunc={() => updateApplications([editingEvent])}
+          submitIsDisabled={editingEvent.date === null}
+          submitDisabledText='No Date'
+        />
+      </ApplicationsAdder>
     {/if}
-
-    <div class="btns-row">
-      <Button onClick={() => showWaterScheduler = !showWaterScheduler}>Switch to {showWaterScheduler ? 'Normal Application' : 'Water Scheduler'}</Button>
-  
-      <div class='btns-container'>
-        <Button btnType='cancel' onClick={closeModal}>Cancel</Button>
-        <Button btnType='green' disabled={editingEvent.date === null} disabledText='No Date' onClick={() => updateApplications([editingEvent])}>Submit</Button>
-      </div>
-    </div>
   </div>
 </Modal>
 
@@ -108,22 +122,5 @@
     gap: 12px;
     max-height: 90vh;
     overflow-y: auto;
-    
-    .btns-row {
-      display: flex;
-      justify-content: space-between;
-      width: 100%;
-      gap: 3px;
-
-      .btns-container {
-        display: flex;
-        gap: 3px;
-        align-items: center;
-        justify-content: end;
-        width: 100%;
-        padding-right: 8px;
-        box-sizing: border-box;
-      }
-    }
   }
 </style>
