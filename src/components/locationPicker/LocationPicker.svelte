@@ -150,7 +150,7 @@
 	}
 
 	function handleMarkerRemove(removeId) {
-		if (removeId !== $activeLocationId) {
+		if (removeId !== $activeLocationId && confirm('This will permanently delete all data associated with this location. Continue?')) {
 			const newLocs = removeLocationFromStorage($locations, removeId);
 			$locations = newLocs;
 			badMessage = '';

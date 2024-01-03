@@ -37,6 +37,10 @@
 	{#if open || isActive}
 		<slot />
 	{/if}
+
+	{#if (open && !isActive)}
+		<div id='tooltip-footer'><p>Right click to delete</p></div>
+	{/if}
 </div>
 
 <style>
@@ -44,4 +48,11 @@
     width: 125px;
     white-space: break-spaces;
   }
+
+	:global(#tooltip-footer > p) {
+		margin: 3px 0px 0px;
+		font-size: 10px;
+		font-style: italic;
+		color: rgb(100,100,100);
+	}
 </style>
