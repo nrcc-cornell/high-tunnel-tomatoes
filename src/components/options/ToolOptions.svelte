@@ -39,13 +39,23 @@
   $: $userOptions, updateLocalUserOptions();
 
   function handleUpdateOptions() {
-    if ($userOptions.rootDepth !== localUserOptions.rootDepth) {
-      localDevOptions = {...localDevOptions, soilmoistureoptions: {...localDevOptions.soilmoistureoptions, ...calcSoilConstants(localUserOptions.rootDepth)}};
+    if ($userOptions) {
+      if ($userOptions.rootDepth !== localUserOptions.rootDepth) {
+        localDevOptions = {...localDevOptions, soilmoistureoptions: {...localDevOptions.soilmoistureoptions, ...calcSoilConstants(localUserOptions.rootDepth)}};
+      }
+  
+      $userOptions = localUserOptions;
+      $devOptions = localDevOptions;
     }
-
-    $userOptions = localUserOptions;
-    $devOptions = localDevOptions;
   }
+
+  $: localUserOptions, (function() {
+    if (!isDevelopment) {
+      handleUpdateOptions();
+      updateLocalUserOptions();
+      updateLocalDevOptions();
+    }
+  })();
 
   function handleBackUpOptionsToFile() {
     backUpOptionsToFile();
@@ -141,16 +151,18 @@
           />
         </div>
 
-        <div style='margin-top: 24px;'>
-          <Button
-            btnType='orange'
-            onClick={handleUpdateOptions}
-            style='margin: 0 auto;'
-            disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&
-              JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}
-            disabledText='No changes to submit'
-          >Submit Changes</Button>
-        </div>
+        {#if isDevelopment}
+          <div style='margin-top: 24px;'>
+            <Button
+              btnType='orange'
+              onClick={handleUpdateOptions}
+              style='margin: 0 auto;'
+              disabled={JSON.stringify(localDevOptions) === JSON.stringify($devOptions) &&
+                JSON.stringify(localUserOptions) === JSON.stringify($userOptions)}
+              disabledText='No changes to submit'
+            >Submit Changes</Button>
+          </div>
+        {/if}
       </OptionsContainer>
       <OptionsContainer sectionName='Water and Nutrient Applications' style='padding-bottom: 8px;'><Applications /></OptionsContainer>
       <OptionsContainer sectionName='Soil Nutrient Test Results' style='padding-bottom: 8px;'><TestResults /></OptionsContainer>

@@ -10,6 +10,7 @@ import type { LocationObj } from '../global';
 let todayDate = new Date();
 export const endDate = todayDate.toISOString().slice(0,10);
 export const isDevelopment = window.location.href !== 'PUT PRODUCTION URL HERE';
+console.log(window.location.href);
 
 // Handle showing loading screen
 export const isLoadingLocation = writable(false);
