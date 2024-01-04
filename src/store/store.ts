@@ -9,8 +9,7 @@ import type { LocationObj } from '../global';
 
 let todayDate = new Date();
 export const endDate = todayDate.toISOString().slice(0,10);
-export const isDevelopment = window.location.href !== 'PUT PRODUCTION URL HERE';
-console.log(window.location.href);
+export const isDevelopment = window.location.href === 'http://0.0.0.0:8080/' || window.location.href === 'https://pages.github.coecis.cornell.edu/be99/high-tunnel/';
 
 // Handle showing loading screen
 export const isLoadingLocation = writable(false);
