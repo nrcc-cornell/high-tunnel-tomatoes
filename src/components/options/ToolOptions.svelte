@@ -12,7 +12,7 @@
   import { devOptions, userOptions, soilCharacteristics, activeLocationId, locations, endDate, isDevelopment } from "../../store/store";
   import { notifications } from "../../store/notifications";
   import { updateOptionsInStorage, backUpOptionsToFile, overwriteStorage } from "../../lib/handleStorage";
-  import { calcSoilConstants } from "../../lib/devNutrientModel";
+  import { calcSoilConstants } from "../../lib/nutrientModel";
 
   let localDevOptions = null;
   let localUserOptions = null;
