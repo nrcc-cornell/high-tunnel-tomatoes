@@ -37,10 +37,7 @@
 
   function updateApplications(submittedApplicationEvents) {
     const newUOs = JSON.parse(JSON.stringify($userOptions));
-    console.log(submittedApplicationEvents);
-    console.log($userOptions.applications);
     submittedApplicationEvents.forEach(event => newUOs.applications[event.id] = event);
-    console.log(newUOs.applications);
     $userOptions = newUOs;
     closeModal();
     justChanged = null;
