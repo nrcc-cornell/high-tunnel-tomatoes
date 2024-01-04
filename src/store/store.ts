@@ -111,6 +111,7 @@ export let userOptions = writable(null);
 export const nutrientData = derived([devOptions, userOptions, weatherData], ([$devOptions, $userOptions, $weatherData]) => {
   let results = null;
   if ($devOptions && $userOptions && $weatherData) {
+    console.log($devOptions, $userOptions);
     const nmRes = handleRunNutrientModel($devOptions, $userOptions, $weatherData);
 
     const {
