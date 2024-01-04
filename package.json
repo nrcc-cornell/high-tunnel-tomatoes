@@ -9,7 +9,6 @@
     "start": "sirv public --no-clear",
     "predeploy": "npm run build",
     "deploy": "git subtree push --prefix public/ origin gh-pages",
-    "preghpagesdeploy": "npm run build",
     "ghpagesdeploy": "git subtree push --prefix public/ ghpages gh-pages",
     "check": "svelte-check",
     "prepare": "npm run smui-theme",
