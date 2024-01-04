@@ -2,7 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import asyncDerived from '../lib/asyncDerived';
 import { getSoilCharacteristics } from '../lib/soilCharacteristics';
 import { getWeatherData } from '../lib/weatherData';
-import { handleRunNutrientModel, SOIL_DATA, calcSoilConstants } from '../lib/devNutrientModel';
+import { handleRunNutrientModel, SOIL_DATA, calcSoilConstants } from '../lib/nutrientModel';
 import { constructWaterChartDetails, constructNitrogenChartDetails } from '../lib/chartParts';
 import { loadActiveLocationId, loadLocations, loadOptions } from '../lib/handleStorage';
 import type { LocationObj } from '../global';
@@ -125,7 +125,7 @@ export const nutrientData = derived([devOptions, userOptions, weatherData], ([$d
       stressthreshold,
       fieldcapacity,
       saturation
-    ].map(t => Math.round(t / 18 * 1000) / 1000);
+    ].map(t => Math.round(t / $userOptions.rootDepth * 1000) / 1000);
 
     const plantingDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.plantingDate);
     const terminationDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.terminationDate);

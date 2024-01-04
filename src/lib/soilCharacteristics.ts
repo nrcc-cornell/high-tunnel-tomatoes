@@ -1,4 +1,4 @@
-import { SoilMoistureOptionLevel } from './devNutrientModel';
+import { SoilMoistureOptionLevel } from './nutrientModel';
 
 type SoilHorizonData = number[];
 

@@ -197,6 +197,7 @@ function runNutrientModel(
   precip: number[],
   pet: number[],
   soilTemp: number[],
+  rootDepth: number,
   soilcap: SoilMoistureOptionLevel,
   plantingDate: Date,
   terminationDate: Date,
@@ -234,7 +235,7 @@ function runNutrientModel(
   //
   // -----------------------------------------------------------------------------------------
   const { soilmoistureoptions: soil_options, somKN, q10, tempO } = devSD;
-  
+
   // Calculate number of days since planting, negative value means current days in loop below is before planting
   let daysSincePlanting =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - plantingDate.getTime() ) / 86400000);
   let daysSinceTermination =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - terminationDate.getTime() ) / 86400000);
@@ -354,12 +355,12 @@ function runNutrientModel(
       tin = lastTest.inorganicN;
     }
 
-    const vwc = (deficit + fc) / 18;
+    const vwc = (deficit + fc) / rootDepth;
     const mineralizationAdjustmentFactor = q10 ** ((soilTemp[idx] - tempO) / 10);
     const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
     ({tin, som, fastN, mediumN, slowN, leached, tableOut} = balanceNitrogen(
       vwc,
-      fc / 18,
+      fc / rootDepth,
       mp,
       drainageTotal,
       hasPlants,
@@ -371,7 +372,8 @@ function runNutrientModel(
       slowN,
       date,
       somKN,
-      mineralizationAdjustmentFactor
+      mineralizationAdjustmentFactor,
+      rootDepth
     ));
 
     dd.push(deficit);
@@ -397,13 +399,14 @@ function runNutrientModel(
 }
 
 export const handleRunNutrientModel = (devOptions, userOptions, weatherData) => {
-  const { waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter } = userOptions;
+  const { rootDepth, waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter } = userOptions;
   const { dates, pet, precip, soilTemp } = weatherData;
   return {
     ...runNutrientModel(
       precip,
       pet,
       soilTemp,
+      rootDepth,
       waterCapacity,
       plantingDate ? new Date(plantingDate + 'T00:00') : new Date(),
       terminationDate ? new Date(terminationDate + 'T00:00') : new Date(),

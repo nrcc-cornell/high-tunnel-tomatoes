@@ -1,12 +1,5 @@
 import { calcMineralizedLbs, adjustForExtraMineralization } from "./nitrogenHelpers";
 
-const rootDepthInches = 18;
-const rootDepthMeters = convertInToM(rootDepthInches);
-// const somKN = 0.000083;
-// const fastKN = 0.1;
-// const mediumKN = 0.003;
-// const slowKN = 0.0002;
-
 function convertInToM(inches: number) {
   // inches / 39.37 = meters
   return inches / 39.37
@@ -32,7 +25,7 @@ function convertLbAcreToOMPercent(lbPerAcre: number) {
   return lbPerAcre / 2000;
 }
 
-function calcTNV(tnKgs, plantUptakeTheta) {
+function calcTNV(tnKgs, plantUptakeTheta, rootDepthMeters) {
   return tnKgs / (rootDepthMeters * plantUptakeTheta);
 }
 
@@ -60,7 +53,8 @@ export default function balanceNitrogen(
   slowN: number[],
   date: string,
   somKN: number,
-  mineralizationAdjustmentFactor: number
+  mineralizationAdjustmentFactor: number,
+  rootDepth: number
 ) {
   //  -------------------------------------------------------------
   //  Calculate soil inorganic nitrogen (lbs/acre) from daily volumetric water content, 
@@ -83,7 +77,10 @@ export default function balanceNitrogen(
   
   const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
   const tnKgs = convertLbAcreToKgM2(tnLbs);
-  const tnV = calcTNV(tnKgs, plantUptakeTheta);
+
+  const rootDepthMeters = convertInToM(rootDepth);
+  const tnV = calcTNV(tnKgs, plantUptakeTheta, rootDepthMeters);
+  
   const UN = hasPlants ? calcPlantUptake(tnV, pet) : 0;
   const QN = calcTransported(tnV, drainage);
   
