@@ -40,7 +40,7 @@
 
     {#each nRows as { title, key, appKey }}
       <p class='row-header'>{title}</p>
-      <p>{Math.round($tooltipData[key].ppm)}ppm ({Math.round($tooltipData[key].lbsPerAcre)}lbs/acre)</p>
+      <p>{Math.round($tooltipData[key].ppm)}ppm ({$tooltipData[key].lbsPerAcre === 0 ? '0 lbs/acre' : ((Math.round($tooltipData[key].lbsPerAcre) === 0 && $tooltipData[key].lbsPerAcre > 0.125) ? 'Trace' : Math.round($tooltipData[key].lbsPerAcre) + 'lbs/acre')})</p>
       {#if $tooltipData.application}
         {#if key === 'tin'}
           <p>{Math.round($tooltipData.application.inorganicN)}lbs/acre</p>

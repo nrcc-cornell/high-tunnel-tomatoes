@@ -39,6 +39,17 @@ function calcTransported(tnV: number, drainageInches: number) {
   return tnV * drainageMeters;
 }
 
+function countSources(vals: (number | [string, number][])[]) {
+  const availableSources = vals.filter(val => {
+    if (typeof val === 'number') {
+      return val > 0;
+    } else {
+      return (val.find(arr => arr[1] > 0) || ['',0])[1];
+    }
+  });
+  return availableSources.length;
+}
+
 export default function balanceNitrogen(
   vwc: number,
   fc: number,
@@ -48,9 +59,9 @@ export default function balanceNitrogen(
   pet: number,
   tin: number,
   som: number,
-  fastN: number[],
-  mediumN: number[],
-  slowN: number[],
+  fastN: [string, number][],
+  mediumN: [string, number][],
+  slowN: [string, number][],
   date: string,
   somKN: number,
   mineralizationAdjustmentFactor: number,
@@ -89,14 +100,16 @@ export default function balanceNitrogen(
   
   const unLbs = convertKgM2ToLbAcre(UN);
   const qnLbs = convertKgM2ToLbAcre(QN);
-  const otherRemoved = (unLbs + qnLbs) / 4;
+
+  const numSources = countSources([somLbs, fastN, mediumN, slowN]);
+  const otherRemoved = numSources ? qnLbs / numSources : 0;
 
   return {
     tin: Math.max(newTinLbs, 0),
     som: Math.max(convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved), 0),
-    fastN: adjustForExtraMineralization(otherRemoved, fastN),
-    mediumN: adjustForExtraMineralization(otherRemoved, mediumN),
-    slowN: adjustForExtraMineralization(otherRemoved, slowN),
+    fastN: adjustForExtraMineralization(fastMineralizedLbs + otherRemoved, fastN),
+    mediumN: adjustForExtraMineralization(mediumMineralizedLbs + otherRemoved, mediumN),
+    slowN: adjustForExtraMineralization(slowMineralizedLbs + otherRemoved, slowN),
     leached: Math.max(Math.round(qnLbs * 1000) / 1000,0),
     tableOut: [
       date,

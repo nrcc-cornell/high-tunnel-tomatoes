@@ -110,7 +110,6 @@ export let userOptions = writable(null);
 export const nutrientData = derived([devOptions, userOptions, weatherData], ([$devOptions, $userOptions, $weatherData]) => {
   let results = null;
   if ($devOptions && $userOptions && $weatherData) {
-    console.log($devOptions, $userOptions);
     const nmRes = handleRunNutrientModel($devOptions, $userOptions, $weatherData);
 
     const {
@@ -129,7 +128,7 @@ export const nutrientData = derived([devOptions, userOptions, weatherData], ([$d
 
     const plantingDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.plantingDate);
     const terminationDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.terminationDate);
-    const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, $userOptions.applications, $weatherData.dates, plantingDateIdx, terminationDateIdx);
+    const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, nmRes.leached, $userOptions.applications, $weatherData.dates, plantingDateIdx, terminationDateIdx);
     const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $weatherData.dates, plantingDateIdx, terminationDateIdx);
     results = { ...nmRes, ...vwcChartDetails, ...tinChartDetails };
   }

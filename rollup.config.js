@@ -31,8 +31,20 @@ function serve() {
 	};
 }
 
+
+// Ignores circular dependency warning from @smui package
+const onwarn = (warning, rollupWarn) => {
+  if (!(
+		warning.code === 'CIRCULAR_DEPENDENCY' &&
+		warning.ids[0].includes('node_modules/@smui/common/dist/')
+	)) {
+		rollupWarn(warning)
+  }
+}
+
 export default {
 	input: 'src/main.ts',
+	onwarn,
 	output: {
 		sourcemap: true,
 		format: 'iife',

@@ -255,7 +255,6 @@ function runNutrientModel(
 
   // Initialize output arrays
   const vwcDaily = [];
-  const dd = [];
   const tinDaily = [];
   const fastDaily = [];
   const mediumDaily = [];
@@ -295,12 +294,15 @@ function runNutrientModel(
     // Adjust water movement to account for calculated and provided variables
     const totalDailyPET = -1 * pet[idx] * devSD.soilmoistureoptions.petAdj * Kc * Ks;
 
+    // We are not currently using precip in this model, as high tunnels are covered
     // const totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
-    let totalDailyPrecip = 0;
+    const totalDailyPrecip = 0;
+
+    let totalDailyIrrigation = 0;
     const todaysApplications = Object.values(applications).filter(obj => obj.date === date);
     if (todaysApplications.length) {
       todaysApplications.forEach(obj => {
-        totalDailyPrecip += obj.waterAmount;
+        totalDailyIrrigation += obj.waterAmount;
         fastN = fastN.concat(obj.fastN);
         mediumN = mediumN.concat(obj.mediumN);
         slowN = slowN.concat(obj.slowN);
@@ -313,9 +315,11 @@ function runNutrientModel(
     // For PET      : this assumption isn't great. Something following diurnal cycle would be best.
     // For drainage : this assumption is okay
     // ALL HOURLY RATES POSITIVE
+    const hourlyPotentialDrainage = dailyPotentialDrainageRate / 24;
     const hourlyPrecip = totalDailyPrecip / 24;
     const hourlyPET = (-1 * totalDailyPET) / 24;
-    const hourlyPotentialDrainage = dailyPotentialDrainageRate / 24;
+    const hourlyIrrigation = totalDailyIrrigation >= totalDailyPET ? hourlyPET : 0;
+    const irrigationLeftover = totalDailyIrrigation - (24 * hourlyIrrigation);
     
     // Initialize daily drainage total for nitrogen calculations
     let drainageTotal = 0;
@@ -331,10 +335,15 @@ function runNutrientModel(
       }
       drainageTotal += hourlyDrainage;
 
+      // Add in amount of irrigation amount that isn't used to offset PET
+      if (hr === 13) {
+        deficit += irrigationLeftover;
+      }
+
       // Adjust soil water based on hourly water budget.
       // soil water is bound by saturation (soil can't be super-saturated). This effectively reduces soil water by hourly runoff as well.
       deficit = Math.min(
-        deficit + hourlyPrecip - hourlyPET - hourlyDrainage,
+        deficit + hourlyPrecip + hourlyIrrigation - hourlyPET - hourlyDrainage,
         soil_options[soilcap].saturation - fc
       );
 
@@ -354,6 +363,7 @@ function runNutrientModel(
       som = lastTest.organicMatter;
       tin = lastTest.inorganicN;
     }
+
 
     const vwc = (deficit + fc) / rootDepth;
     const mineralizationAdjustmentFactor = q10 ** ((soilTemp[idx] - tempO) / 10);
@@ -376,7 +386,6 @@ function runNutrientModel(
       rootDepth
     ));
 
-    dd.push(deficit);
     vwcDaily.push(Math.round(vwc * 1000) / 1000);
     tinDaily.push(Math.round((tin / 2) * 1000) / 1000);
     fastDaily.push(Math.round((fastN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
@@ -394,7 +403,6 @@ function runNutrientModel(
     slowN: slowDaily,
     leached: leachedDaily,
     table
-    // dd
   };
 }
 
