@@ -25,8 +25,8 @@ function convertLbAcreToOMPercent(lbPerAcre: number) {
   return lbPerAcre / 2000;
 }
 
-function calcTNV(tnKgs, plantUptakeTheta, rootDepthMeters) {
-  return tnKgs / (rootDepthMeters * plantUptakeTheta);
+function calcTNV(tnKgs, vwc, rootDepthMeters) {
+  return tnKgs / (rootDepthMeters * vwc);
 }
 
 function calcPlantUptake(tnV: number, petInches: number) {
@@ -52,8 +52,7 @@ function countSources(vals: (number | [string, number][])[]) {
 
 export default function balanceNitrogen(
   vwc: number,
-  fc: number,
-  mp: number,
+  gTheta: number,
   drainage: number,
   hasPlants: boolean,
   pet: number,
@@ -77,8 +76,6 @@ export default function balanceNitrogen(
   //
   //  -------------------------------------------------------------
   
-  const gTheta = (fc - mp)/(vwc - mp); //// supposed to be equation from Josef
-  const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
 
   let somLbs = convertOMPercentToLbAcre(som);
   const somMineralizedLbs = mineralizationAdjustmentFactor * gTheta * somKN * somLbs;
@@ -90,7 +87,7 @@ export default function balanceNitrogen(
   const tnKgs = convertLbAcreToKgM2(tnLbs);
 
   const rootDepthMeters = convertInToM(rootDepth);
-  const tnV = calcTNV(tnKgs, plantUptakeTheta, rootDepthMeters);
+  const tnV = calcTNV(tnKgs, vwc, rootDepthMeters);
   
   const UN = hasPlants ? calcPlantUptake(tnV, pet) : 0;
   const QN = calcTransported(tnV, drainage);

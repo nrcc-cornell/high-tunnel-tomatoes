@@ -101,7 +101,19 @@ export const SOIL_DATA = (inches=18) => {
     },
     somKN: 0.000083,
     q10: 2,
-    tempO: 20
+    tempO: 20,
+    theta: {
+      b: {
+        low: 0.03,
+        medium: 0.10,
+        high: 0.16
+      },
+      o: {
+        low: 0.15,
+        medium: 0.29,
+        high: 0.33
+      }
+    }
   }
 };
 
@@ -234,7 +246,11 @@ function runNutrientModel(
   //  irrigationIdxs  : array of indices where the user irrigated
   //
   // -----------------------------------------------------------------------------------------
-  const { soilmoistureoptions: soil_options, somKN, q10, tempO } = devSD;
+  const { soilmoistureoptions: soil_options, somKN, q10, tempO, theta } = devSD;
+  const thetaB = theta.b[soilcap];
+  const thetaO = theta.o[soilcap];
+  console.log(thetaB, thetaO);
+
 
   // Calculate number of days since planting, negative value means current days in loop below is before planting
   let daysSincePlanting =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - plantingDate.getTime() ) / 86400000);
@@ -366,12 +382,12 @@ function runNutrientModel(
 
 
     const vwc = (deficit + fc) / rootDepth;
+    const gTheta = Math.max(0, (vwc - thetaB)/(thetaO - thetaB));
+
     const mineralizationAdjustmentFactor = q10 ** ((soilTemp[idx] - tempO) / 10);
-    const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
     ({tin, som, fastN, mediumN, slowN, leached, tableOut} = balanceNitrogen(
       vwc,
-      fc / rootDepth,
-      mp,
+      gTheta,
       drainageTotal,
       hasPlants,
       -1 * totalDailyPET,
