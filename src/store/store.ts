@@ -91,13 +91,20 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
         testResults: {}
       };
     }
-    if (get(userOptions) === null && newUO === null) {
+    
+    if (newSC === null) {
+      // Handles short circuiting if the location doesn't have soil data
       changeLoading('nutrientModel', false);
+      userOptions.set(null);
+    } else {
+      if (get(userOptions) === null && newUO === null) {
+        changeLoading('nutrientModel', false);
+      }
+  
+      const devO = get(devOptions);
+      devOptions.set({ ...devO, soilmoistureoptions: { ...devO.soilmoistureoptions, ...calcSoilConstants(newUO.rootDepth) } });
+      userOptions.set(newUO);
     }
-
-    const devO = get(devOptions);
-    devOptions.set({ ...devO, soilmoistureoptions: { ...devO.soilmoistureoptions, ...calcSoilConstants(newUO.rootDepth) } });
-    userOptions.set(newUO);
   }
   changeLoading('soilCharacteristics', false);
   return newSC;
@@ -132,7 +139,7 @@ export const nutrientData = derived([devOptions, userOptions, weatherData], ([$d
     const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $weatherData.dates, plantingDateIdx, terminationDateIdx);
     results = { ...nmRes, ...vwcChartDetails, ...tinChartDetails };
   }
-  if ($devOptions && $userOptions && $weatherData !== null) {
+  if (($devOptions && $userOptions && $weatherData !== null) || (!$userOptions)) {
     changeLoading('nutrientModel', false);
   }
   return results;

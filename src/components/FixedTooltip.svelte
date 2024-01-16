@@ -68,10 +68,10 @@
     border: 1px solid rgb(220,220,220);
     border-radius: 6px;
     box-shadow: 0px 3px 5px 0px rgba(100,100,100,0.2);
-    position: absolute;
-    top: 50%;
+    position: fixed;
+    bottom: 12px;
     left: 50%;
-    transform: translate(-50%,-50%);
+    transform: translateX(-50%);
     pointer-events: none;
     display: grid;
     grid-template-rows: repeat(var(--numRows), fit-content);
