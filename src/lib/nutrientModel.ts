@@ -230,7 +230,8 @@ function runNutrientModel(
     inorganicN: number
   }},
   dates: string[],
-  devSD
+  devSD,
+  version: ('commercial' | 'homeowner')
 ) {
   // -----------------------------------------------------------------------------------------
   // Calculate daily volumetric water content (inches H2O / inch soil) from daily precipitation, evapotranspiration, soil drainage and runoff.
@@ -249,8 +250,6 @@ function runNutrientModel(
   const { soilmoistureoptions: soil_options, somKN, q10, tempO, theta } = devSD;
   const thetaB = theta.b[soilcap];
   const thetaO = theta.o[soilcap];
-  console.log(thetaB, thetaO);
-
 
   // Calculate number of days since planting, negative value means current days in loop below is before planting
   let daysSincePlanting =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - plantingDate.getTime() ) / 86400000);
@@ -304,15 +303,14 @@ function runNutrientModel(
     const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
     // Calculate Kc, the crop coefficient, account for if plants exist and what stage they are at
     const Kc = getCropCoeff(hasPlants, daysSincePlanting, devSD);
-
-    
     
     // Adjust water movement to account for calculated and provided variables
-    const totalDailyPET = -1 * pet[idx] * devSD.soilmoistureoptions.petAdj * Kc * Ks;
+    const petAdj = version === 'commercial' ? devSD.soilmoistureoptions.petAdj : 1;
+    const totalDailyPET = -1 * pet[idx] * petAdj * Kc * Ks;
 
-    // We are not currently using precip in this model, as high tunnels are covered
-    // const totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
-    const totalDailyPrecip = 0;
+    // Set daily precip. If commercial version precip is 0 because high tunnels are under cover.
+    let totalDailyPrecip = precip[idx];
+    if (version === 'commercial') totalDailyPrecip = 0;
 
     let totalDailyIrrigation = 0;
     const todaysApplications = Object.values(applications).filter(obj => obj.date === date);
@@ -423,7 +421,7 @@ function runNutrientModel(
 }
 
 export const handleRunNutrientModel = (devOptions, userOptions, weatherData) => {
-  const { rootDepth, waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter } = userOptions;
+  const { rootDepth, waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter, version } = userOptions;
   const { dates, pet, precip, soilTemp } = weatherData;
   return {
     ...runNutrientModel(
@@ -438,7 +436,8 @@ export const handleRunNutrientModel = (devOptions, userOptions, weatherData) => 
       applications,
       testResults,
       dates,
-      devOptions
+      devOptions,
+      version
     ),
     dates
   };

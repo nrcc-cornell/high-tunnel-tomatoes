@@ -80,6 +80,10 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
       if (!Object.keys(newUO).includes('rootDepth')) {
         newUO.rootDepth = 18;
       }
+
+      if (!Object.keys(newUO).includes('version')) {
+        newUO.version = 'commercial';
+      }
     } else if (newSC) {
       newUO = {
         rootDepth: 18,
@@ -88,7 +92,8 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
         plantingDate: null,
         terminationDate: null,
         applications: {},
-        testResults: {}
+        testResults: {},
+        version: 'commercial'
       };
     }
     

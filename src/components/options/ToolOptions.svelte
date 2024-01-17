@@ -90,6 +90,14 @@
   },{
     name: 'Clay, fine texture',
     value: 'high'
+  }];
+
+  const versionOptions = [{
+    name: 'Commercial - High tunnel grower',
+    value: 'commercial'
+  },{
+    name: 'Homeowner - Gardener',
+    value: 'homeowner'
   }]
 </script>
 
@@ -98,6 +106,13 @@
     <div class='user-options-container'>
       <OptionsContainer sectionName='Options'>
         <div class="other-vars">
+          <ShapedSelect
+            bind:value={localUserOptions.version}
+            highlight={localUserOptions.version !== $userOptions.version}
+            label='Model Version'
+            helperText='Choose the version that is applicable to your needs'
+            options={versionOptions}
+          />
           <ShapedSelect
             bind:value={localUserOptions.waterCapacity}
             highlight={localUserOptions.waterCapacity !== $userOptions.waterCapacity}
@@ -416,6 +431,7 @@
     justify-content: space-evenly;
     flex-wrap: wrap;
     gap: 12px;
+    max-width: 900px;
   }
 
   .user-options-container {
