@@ -40,7 +40,7 @@
 
     {#each nRows as { title, key, appKey }}
       <p class='row-header'>{title}</p>
-      <p>{Math.round($tooltipData[key].ppm)}ppm ({Math.round($tooltipData[key].lbsPerAcre)}lbs/acre)</p>
+      <p>{Math.round($tooltipData[key].ppm)}ppm ({$tooltipData[key].lbsPerAcre === 0 ? '0 lbs/acre' : ((Math.round($tooltipData[key].lbsPerAcre) === 0 && $tooltipData[key].lbsPerAcre > 0.125) ? 'Trace' : Math.round($tooltipData[key].lbsPerAcre) + 'lbs/acre')})</p>
       {#if $tooltipData.application}
         {#if key === 'tin'}
           <p>{Math.round($tooltipData.application.inorganicN)}lbs/acre</p>
@@ -68,10 +68,10 @@
     border: 1px solid rgb(220,220,220);
     border-radius: 6px;
     box-shadow: 0px 3px 5px 0px rgba(100,100,100,0.2);
-    position: absolute;
-    top: 50%;
+    position: fixed;
+    bottom: 12px;
     left: 50%;
-    transform: translate(-50%,-50%);
+    transform: translateX(-50%);
     pointer-events: none;
     display: grid;
     grid-template-rows: repeat(var(--numRows), fit-content);

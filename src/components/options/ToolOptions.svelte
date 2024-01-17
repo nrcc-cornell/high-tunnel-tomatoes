@@ -90,6 +90,14 @@
   },{
     name: 'Clay, fine texture',
     value: 'high'
+  }];
+
+  const versionOptions = [{
+    name: 'Commercial - High tunnel grower',
+    value: 'commercial'
+  },{
+    name: 'Homeowner - Gardener',
+    value: 'homeowner'
   }]
 </script>
 
@@ -98,6 +106,13 @@
     <div class='user-options-container'>
       <OptionsContainer sectionName='Options'>
         <div class="other-vars">
+          <ShapedSelect
+            bind:value={localUserOptions.version}
+            highlight={localUserOptions.version !== $userOptions.version}
+            label='Model Version'
+            helperText='Choose the version that is applicable to your needs'
+            options={versionOptions}
+          />
           <ShapedSelect
             bind:value={localUserOptions.waterCapacity}
             highlight={localUserOptions.waterCapacity !== $userOptions.waterCapacity}
@@ -232,6 +247,31 @@
           </div>
         </div>
         <div>
+          <h4>g(θ)</h4>
+          <div class='gtheta-grid'>
+            {#each ['', 'θb', 'θo'] as row}
+              {#each ['constName', 'low', 'medium', 'high'] as col (`${col}-${row}`)}
+                {#if col === 'constName'}
+                  <div class='header' style='height: 24px;'>{row}</div>
+                {:else if row === ''}
+                  <div class={col === $userOptions.waterCapacity ? 'header highlighted' : 'header'}>{waterCapacityOptions.find(wco => wco.value === col).name}</div>
+                {:else}
+                  <div class={col === $userOptions.waterCapacity ? 'highlighted' : ''}>
+                    <ShapedTextfield
+                      bind:value={localDevOptions.theta[row[1]][col]}
+                      highlight={localDevOptions.theta[row[1]][col] !== $devOptions.theta[row[1]][col]}
+                      type='number'
+                      input$step='0.01'
+                      input$min='0'
+                      width=115
+                    />
+                  </div>
+                {/if}
+              {/each}
+            {/each}
+          </div>
+        </div>
+        <div>
           <h4>Other Variables</h4>
           <div class='other-vars'>
             <ShapedTextfield
@@ -338,6 +378,7 @@
   }
 
   .kc-grid,
+  .gtheta-grid,
   .smo-grid {
     display: grid;
     align-items: center;
@@ -352,6 +393,7 @@
     }
   }
 
+  .gtheta-grid,
   .smo-grid {
     grid-template-columns: 120px repeat(3, 123px);
     grid-template-rows: 38px repeat(5, 68px);
@@ -366,6 +408,10 @@
       font-weight: bold;
       font-size: 12px;
     }
+  }
+
+  .gtheta-grid {
+    grid-template-rows: 38px repeat(3, 68px);
   }
 
   .kc-grid {
@@ -385,6 +431,7 @@
     justify-content: space-evenly;
     flex-wrap: wrap;
     gap: 12px;
+    max-width: 900px;
   }
 
   .user-options-container {

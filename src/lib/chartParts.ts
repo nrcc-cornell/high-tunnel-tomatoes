@@ -128,7 +128,7 @@ export function constructNitrogenChartDetails(tins, testResults, dates, planting
   };
 }
 
-export function constructWaterChartDetails(thresholds, vwcs, applications, dates, plantingDateIdx, terminationDateIdx) {
+export function constructWaterChartDetails(thresholds, vwcs, leachedValues, applications, dates, plantingDateIdx, terminationDateIdx) {
   const BAND_COLORS = [
     '255,0,0',
     '255,157,0',
@@ -253,6 +253,19 @@ export function constructWaterChartDetails(thresholds, vwcs, applications, dates
 
   vwcAnnotations.annotations['plantingDate'] = createVerticalIndicator(plantingDateIdx, PLANTED_INDICATOR_OPTIONS);
   vwcAnnotations.annotations['terminationDate'] = createVerticalIndicator(terminationDateIdx, TERMINATION_INDICATOR_OPTIONS);
+
+  leachedValues.forEach((value, i) => {
+    if (value > 0) {
+      vwcAnnotations.annotations['point' + i] = {
+        type: 'point',
+        drawTime: 'beforeDraw',
+        backgroundColor: 'rgba(242, 50, 229, 0.5)',
+        borderWidth: 0,
+        xValue: i,
+        yValue: vwcs[i]
+    }
+    }
+  });
 
   return {
     vwcAnnotations,

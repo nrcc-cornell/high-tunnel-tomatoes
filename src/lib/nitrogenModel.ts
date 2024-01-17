@@ -25,8 +25,8 @@ function convertLbAcreToOMPercent(lbPerAcre: number) {
   return lbPerAcre / 2000;
 }
 
-function calcTNV(tnKgs, plantUptakeTheta, rootDepthMeters) {
-  return tnKgs / (rootDepthMeters * plantUptakeTheta);
+function calcTNV(tnKgs, vwc, rootDepthMeters) {
+  return tnKgs / (rootDepthMeters * vwc);
 }
 
 function calcPlantUptake(tnV: number, petInches: number) {
@@ -39,18 +39,28 @@ function calcTransported(tnV: number, drainageInches: number) {
   return tnV * drainageMeters;
 }
 
+function countSources(vals: (number | [string, number][])[]) {
+  const availableSources = vals.filter(val => {
+    if (typeof val === 'number') {
+      return val > 0;
+    } else {
+      return (val.find(arr => arr[1] > 0) || ['',0])[1];
+    }
+  });
+  return availableSources.length;
+}
+
 export default function balanceNitrogen(
   vwc: number,
-  fc: number,
-  mp: number,
+  gTheta: number,
   drainage: number,
   hasPlants: boolean,
   pet: number,
   tin: number,
   som: number,
-  fastN: number[],
-  mediumN: number[],
-  slowN: number[],
+  fastN: [string, number][],
+  mediumN: [string, number][],
+  slowN: [string, number][],
   date: string,
   somKN: number,
   mineralizationAdjustmentFactor: number,
@@ -66,8 +76,6 @@ export default function balanceNitrogen(
   //
   //  -------------------------------------------------------------
   
-  const gTheta = (fc - mp)/(vwc - mp); //// supposed to be equation from Josef
-  const plantUptakeTheta = 0.25; //// unknown from Arts calcs doc
 
   let somLbs = convertOMPercentToLbAcre(som);
   const somMineralizedLbs = mineralizationAdjustmentFactor * gTheta * somKN * somLbs;
@@ -79,7 +87,7 @@ export default function balanceNitrogen(
   const tnKgs = convertLbAcreToKgM2(tnLbs);
 
   const rootDepthMeters = convertInToM(rootDepth);
-  const tnV = calcTNV(tnKgs, plantUptakeTheta, rootDepthMeters);
+  const tnV = calcTNV(tnKgs, vwc, rootDepthMeters);
   
   const UN = hasPlants ? calcPlantUptake(tnV, pet) : 0;
   const QN = calcTransported(tnV, drainage);
@@ -89,14 +97,16 @@ export default function balanceNitrogen(
   
   const unLbs = convertKgM2ToLbAcre(UN);
   const qnLbs = convertKgM2ToLbAcre(QN);
-  const otherRemoved = (unLbs + qnLbs) / 4;
+
+  const numSources = countSources([somLbs, fastN, mediumN, slowN]);
+  const otherRemoved = numSources ? qnLbs / numSources : 0;
 
   return {
     tin: Math.max(newTinLbs, 0),
     som: Math.max(convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved), 0),
-    fastN: adjustForExtraMineralization(otherRemoved, fastN),
-    mediumN: adjustForExtraMineralization(otherRemoved, mediumN),
-    slowN: adjustForExtraMineralization(otherRemoved, slowN),
+    fastN: adjustForExtraMineralization(fastMineralizedLbs + otherRemoved, fastN),
+    mediumN: adjustForExtraMineralization(mediumMineralizedLbs + otherRemoved, mediumN),
+    slowN: adjustForExtraMineralization(slowMineralizedLbs + otherRemoved, slowN),
     leached: Math.max(Math.round(qnLbs * 1000) / 1000,0),
     tableOut: [
       date,

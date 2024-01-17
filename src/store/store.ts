@@ -80,6 +80,10 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
       if (!Object.keys(newUO).includes('rootDepth')) {
         newUO.rootDepth = 18;
       }
+
+      if (!Object.keys(newUO).includes('version')) {
+        newUO.version = 'commercial';
+      }
     } else if (newSC) {
       newUO = {
         rootDepth: 18,
@@ -88,16 +92,24 @@ export const soilCharacteristics = asyncDerived(activeLocation, async ($activeLo
         plantingDate: null,
         terminationDate: null,
         applications: {},
-        testResults: {}
+        testResults: {},
+        version: 'commercial'
       };
     }
-    if (get(userOptions) === null && newUO === null) {
+    
+    if (newSC === null) {
+      // Handles short circuiting if the location doesn't have soil data
       changeLoading('nutrientModel', false);
+      userOptions.set(null);
+    } else {
+      if (get(userOptions) === null && newUO === null) {
+        changeLoading('nutrientModel', false);
+      }
+  
+      const devO = get(devOptions);
+      devOptions.set({ ...devO, soilmoistureoptions: { ...devO.soilmoistureoptions, ...calcSoilConstants(newUO.rootDepth) } });
+      userOptions.set(newUO);
     }
-
-    const devO = get(devOptions);
-    devOptions.set({ ...devO, soilmoistureoptions: { ...devO.soilmoistureoptions, ...calcSoilConstants(newUO.rootDepth) } });
-    userOptions.set(newUO);
   }
   changeLoading('soilCharacteristics', false);
   return newSC;
@@ -110,7 +122,6 @@ export let userOptions = writable(null);
 export const nutrientData = derived([devOptions, userOptions, weatherData], ([$devOptions, $userOptions, $weatherData]) => {
   let results = null;
   if ($devOptions && $userOptions && $weatherData) {
-    console.log($devOptions, $userOptions);
     const nmRes = handleRunNutrientModel($devOptions, $userOptions, $weatherData);
 
     const {
@@ -129,11 +140,11 @@ export const nutrientData = derived([devOptions, userOptions, weatherData], ([$d
 
     const plantingDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.plantingDate);
     const terminationDateIdx = $weatherData.dates.findIndex(d => d === $userOptions.terminationDate);
-    const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, $userOptions.applications, $weatherData.dates, plantingDateIdx, terminationDateIdx);
+    const vwcChartDetails = constructWaterChartDetails(vwcThresholds, nmRes.vwc, nmRes.leached, $userOptions.applications, $weatherData.dates, plantingDateIdx, terminationDateIdx);
     const tinChartDetails = constructNitrogenChartDetails(nmRes.tin, $userOptions.testResults, $weatherData.dates, plantingDateIdx, terminationDateIdx);
     results = { ...nmRes, ...vwcChartDetails, ...tinChartDetails };
   }
-  if ($devOptions && $userOptions && $weatherData !== null) {
+  if (($devOptions && $userOptions && $weatherData !== null) || (!$userOptions)) {
     changeLoading('nutrientModel', false);
   }
   return results;

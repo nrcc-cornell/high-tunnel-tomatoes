@@ -101,7 +101,19 @@ export const SOIL_DATA = (inches=18) => {
     },
     somKN: 0.000083,
     q10: 2,
-    tempO: 20
+    tempO: 20,
+    theta: {
+      b: {
+        low: 0.03,
+        medium: 0.10,
+        high: 0.16
+      },
+      o: {
+        low: 0.15,
+        medium: 0.29,
+        high: 0.33
+      }
+    }
   }
 };
 
@@ -218,7 +230,8 @@ function runNutrientModel(
     inorganicN: number
   }},
   dates: string[],
-  devSD
+  devSD,
+  version: ('commercial' | 'homeowner')
 ) {
   // -----------------------------------------------------------------------------------------
   // Calculate daily volumetric water content (inches H2O / inch soil) from daily precipitation, evapotranspiration, soil drainage and runoff.
@@ -234,7 +247,9 @@ function runNutrientModel(
   //  irrigationIdxs  : array of indices where the user irrigated
   //
   // -----------------------------------------------------------------------------------------
-  const { soilmoistureoptions: soil_options, somKN, q10, tempO } = devSD;
+  const { soilmoistureoptions: soil_options, somKN, q10, tempO, theta } = devSD;
+  const thetaB = theta.b[soilcap];
+  const thetaO = theta.o[soilcap];
 
   // Calculate number of days since planting, negative value means current days in loop below is before planting
   let daysSincePlanting =  Math.floor(( Date.parse(dates[0].slice(0,4) + '-01-01') - plantingDate.getTime() ) / 86400000);
@@ -255,7 +270,6 @@ function runNutrientModel(
 
   // Initialize output arrays
   const vwcDaily = [];
-  const dd = [];
   const tinDaily = [];
   const fastDaily = [];
   const mediumDaily = [];
@@ -289,18 +303,20 @@ function runNutrientModel(
     const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
     // Calculate Kc, the crop coefficient, account for if plants exist and what stage they are at
     const Kc = getCropCoeff(hasPlants, daysSincePlanting, devSD);
-
-    
     
     // Adjust water movement to account for calculated and provided variables
-    const totalDailyPET = -1 * pet[idx] * devSD.soilmoistureoptions.petAdj * Kc * Ks;
+    const petAdj = version === 'commercial' ? devSD.soilmoistureoptions.petAdj : 1;
+    const totalDailyPET = -1 * pet[idx] * petAdj * Kc * Ks;
 
-    // const totalDailyPrecip = precip[idx] + (irrigationIdxs.includes(idx) ? 0.50 : 0);
-    let totalDailyPrecip = 0;
+    // Set daily precip. If commercial version precip is 0 because high tunnels are under cover.
+    let totalDailyPrecip = precip[idx];
+    if (version === 'commercial') totalDailyPrecip = 0;
+
+    let totalDailyIrrigation = 0;
     const todaysApplications = Object.values(applications).filter(obj => obj.date === date);
     if (todaysApplications.length) {
       todaysApplications.forEach(obj => {
-        totalDailyPrecip += obj.waterAmount;
+        totalDailyIrrigation += obj.waterAmount;
         fastN = fastN.concat(obj.fastN);
         mediumN = mediumN.concat(obj.mediumN);
         slowN = slowN.concat(obj.slowN);
@@ -313,9 +329,11 @@ function runNutrientModel(
     // For PET      : this assumption isn't great. Something following diurnal cycle would be best.
     // For drainage : this assumption is okay
     // ALL HOURLY RATES POSITIVE
+    const hourlyPotentialDrainage = dailyPotentialDrainageRate / 24;
     const hourlyPrecip = totalDailyPrecip / 24;
     const hourlyPET = (-1 * totalDailyPET) / 24;
-    const hourlyPotentialDrainage = dailyPotentialDrainageRate / 24;
+    const hourlyIrrigation = totalDailyIrrigation >= totalDailyPET ? hourlyPET : 0;
+    const irrigationLeftover = totalDailyIrrigation - (24 * hourlyIrrigation);
     
     // Initialize daily drainage total for nitrogen calculations
     let drainageTotal = 0;
@@ -331,10 +349,15 @@ function runNutrientModel(
       }
       drainageTotal += hourlyDrainage;
 
+      // Add in amount of irrigation amount that isn't used to offset PET
+      if (hr === 13) {
+        deficit += irrigationLeftover;
+      }
+
       // Adjust soil water based on hourly water budget.
       // soil water is bound by saturation (soil can't be super-saturated). This effectively reduces soil water by hourly runoff as well.
       deficit = Math.min(
-        deficit + hourlyPrecip - hourlyPET - hourlyDrainage,
+        deficit + hourlyPrecip + hourlyIrrigation - hourlyPET - hourlyDrainage,
         soil_options[soilcap].saturation - fc
       );
 
@@ -355,13 +378,14 @@ function runNutrientModel(
       tin = lastTest.inorganicN;
     }
 
+
     const vwc = (deficit + fc) / rootDepth;
+    const gTheta = Math.max(0, (vwc - thetaB)/(thetaO - thetaB));
+
     const mineralizationAdjustmentFactor = q10 ** ((soilTemp[idx] - tempO) / 10);
-    const mp = 0;   //// matric potential that Josef needs to give for high, medium, low
     ({tin, som, fastN, mediumN, slowN, leached, tableOut} = balanceNitrogen(
       vwc,
-      fc / rootDepth,
-      mp,
+      gTheta,
       drainageTotal,
       hasPlants,
       -1 * totalDailyPET,
@@ -376,7 +400,6 @@ function runNutrientModel(
       rootDepth
     ));
 
-    dd.push(deficit);
     vwcDaily.push(Math.round(vwc * 1000) / 1000);
     tinDaily.push(Math.round((tin / 2) * 1000) / 1000);
     fastDaily.push(Math.round((fastN.reduce((acc, arr) => acc += arr[1], 0) / 2) * 1000) / 1000);
@@ -394,12 +417,11 @@ function runNutrientModel(
     slowN: slowDaily,
     leached: leachedDaily,
     table
-    // dd
   };
 }
 
 export const handleRunNutrientModel = (devOptions, userOptions, weatherData) => {
-  const { rootDepth, waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter } = userOptions;
+  const { rootDepth, waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter, version } = userOptions;
   const { dates, pet, precip, soilTemp } = weatherData;
   return {
     ...runNutrientModel(
@@ -414,7 +436,8 @@ export const handleRunNutrientModel = (devOptions, userOptions, weatherData) => 
       applications,
       testResults,
       dates,
-      devOptions
+      devOptions,
+      version
     ),
     dates
   };
