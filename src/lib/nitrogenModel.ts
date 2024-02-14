@@ -55,6 +55,7 @@ export default function balanceNitrogen(
   gTheta: number,
   drainage: number,
   hasPlants: boolean,
+  soilTempC: number,
   pet: number,
   tin: number,
   som: number,
@@ -69,16 +70,12 @@ export default function balanceNitrogen(
   //  -------------------------------------------------------------
   //  Calculate soil inorganic nitrogen (lbs/acre) from daily volumetric water content, 
   //    nitrogen application dates and amounts, and an initial soil organic matter percentage
-  //
-  //  initOM                : initial soil organic matter (%)
-  //  nitrogenApplications  : array of [date as 'YYYY-MM-DD', amount of nitrogen applied (lbs/acre)]
-  //  water                 : daily array of [date as 'YYYY-MM-DD', volumetric water content as decimal, 24hr drainage (inches)]
-  //
   //  -------------------------------------------------------------
   
+  const lowTempShutOff = soilTempC < 5;
 
   let somLbs = convertOMPercentToLbAcre(som);
-  const somMineralizedLbs = mineralizationAdjustmentFactor * gTheta * somKN * somLbs;
+  const somMineralizedLbs = lowTempShutOff ? 0 : mineralizationAdjustmentFactor * gTheta * somKN * somLbs;
   const { amountMineralized: fastMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, fastN);
   const { amountMineralized: mediumMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, mediumN);
   const { amountMineralized: slowMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, slowN);
@@ -90,7 +87,7 @@ export default function balanceNitrogen(
   const tnV = calcTNV(tnKgs, vwc, rootDepthMeters);
   
   const UN = hasPlants ? calcPlantUptake(tnV, pet) : 0;
-  const QN = calcTransported(tnV, drainage);
+  const QN = lowTempShutOff ? 0 : calcTransported(tnV, drainage);
   
   const newTinKgs = tnKgs - UN - QN;
   const newTinLbs = convertKgM2ToLbAcre(newTinKgs);
