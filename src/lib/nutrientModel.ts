@@ -99,8 +99,7 @@ export const SOIL_DATA = (inches=18) => {
       medium: { daysToDrainToFcFromSat: 1.0 },
       high: { daysToDrainToFcFromSat: 2.0 },
     },
-    somKN: 0.00004,
-    // somKN: 0.000083,
+    somKN: 0.000083,
     q10: 2,
     tempO: 20,
     theta: {
@@ -296,6 +295,10 @@ function runNutrientModel(
   // Loop through all days, starting with the second day (we already have the values for the initial day from model initialization)
   for (let idx = 0; idx < pet.length; idx++) {
     const date = dates[idx];
+    if (date.slice(5) === '01-01') {
+      deficit = 0;
+    }
+
     daysSincePlanting += 1;
     daysSinceTermination += 1;
     const hasPlants = daysSincePlanting >=0 && daysSinceTermination < 0;

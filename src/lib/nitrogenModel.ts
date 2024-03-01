@@ -76,9 +76,9 @@ export default function balanceNitrogen(
 
   let somLbs = convertOMPercentToLbAcre(som);
   const somMineralizedLbs = lowTempShutOff ? 0 : mineralizationAdjustmentFactor * gTheta * somKN * somLbs;
-  const { amountMineralized: fastMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, fastN);
-  const { amountMineralized: mediumMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, mediumN);
-  const { amountMineralized: slowMineralizedLbs } = calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, slowN);
+  const { amountMineralized: fastMineralizedLbs } = lowTempShutOff ? { amountMineralized: 0 } : calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, fastN);
+  const { amountMineralized: mediumMineralizedLbs } = lowTempShutOff ? { amountMineralized: 0 } : calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, mediumN);
+  const { amountMineralized: slowMineralizedLbs } = lowTempShutOff ? { amountMineralized: 0 } : calcMineralizedLbs(mineralizationAdjustmentFactor, gTheta, slowN);
   
   const tnLbs = tin + somMineralizedLbs + fastMineralizedLbs + mediumMineralizedLbs + slowMineralizedLbs;
   const tnKgs = convertLbAcreToKgM2(tnLbs);
@@ -97,6 +97,8 @@ export default function balanceNitrogen(
 
   const numSources = countSources([somLbs, fastN, mediumN, slowN]);
   const otherRemoved = numSources ? qnLbs / numSources : 0;
+
+  console.log(date, soilTempC, somMineralizedLbs);
 
   return {
     tin: Math.max(newTinLbs, 0),
