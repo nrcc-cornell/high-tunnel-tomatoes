@@ -306,7 +306,7 @@ function runNutrientModel(
     const isAirBelow32 = avgt[idx] < 32;
 
     let totalDailyPET = 0;
-    if (hasPlants && !isAirBelow32) {
+    if ((hasPlants || version === 'homeowner') && !isAirBelow32) {
       // Calculate Ks, the water stress coefficient, using antecedent deficit
       const TAW = getTawForPlant(soil_options[soilcap]);
       const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
