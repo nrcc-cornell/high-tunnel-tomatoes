@@ -206,6 +206,7 @@ export async function getWeatherData({ lat, lon }, date) {
       pet: [],
       precip: [],
       soilTemp: [],
+      avgt: [],
       fcstLength: Math.max(weatherFcstLength, petFcstLength)
     };
 
@@ -218,6 +219,7 @@ export async function getWeatherData({ lat, lon }, date) {
         results.dates.push(petDate);
         results.pet.push(petValue);
         results.precip.push(precipValue);
+        results.avgt.push(tempFValue);
         results.soilTemp.push(calcSoilTemp(petDate, tempFValue));
       } else {
         throw 'PET, precip, and temp dates do not match';

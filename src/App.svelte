@@ -7,6 +7,8 @@
 	import Toast from "./components/Toast.svelte";
 
 	import { soilCharacteristics, isLoadingData, isDevelopment } from "./store/store";
+
+	console.log('init');
 </script>
 
 <main>

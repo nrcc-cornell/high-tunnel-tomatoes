@@ -231,7 +231,8 @@ function runNutrientModel(
   }},
   dates: string[],
   devSD,
-  version: ('commercial' | 'homeowner')
+  version: ('commercial' | 'homeowner'),
+  avgt: number[]
 ) {
   // -----------------------------------------------------------------------------------------
   // Calculate daily volumetric water content (inches H2O / inch soil) from daily precipitation, evapotranspiration, soil drainage and runoff.
@@ -294,19 +295,28 @@ function runNutrientModel(
   // Loop through all days, starting with the second day (we already have the values for the initial day from model initialization)
   for (let idx = 0; idx < pet.length; idx++) {
     const date = dates[idx];
+    if (date.slice(5) === '01-01') {
+      deficit = 0;
+    }
+
     daysSincePlanting += 1;
     daysSinceTermination += 1;
     const hasPlants = daysSincePlanting >=0 && daysSinceTermination < 0;
 
-    // Calculate Ks, the water stress coefficient, using antecedent deficit
-    const TAW = getTawForPlant(soil_options[soilcap]);
-    const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
-    // Calculate Kc, the crop coefficient, account for if plants exist and what stage they are at
-    const Kc = getCropCoeff(hasPlants, daysSincePlanting, devSD);
-    
-    // Adjust water movement to account for calculated and provided variables
-    const petAdj = version === 'commercial' ? devSD.soilmoistureoptions.petAdj : 1;
-    const totalDailyPET = -1 * pet[idx] * petAdj * Kc * Ks;
+    const isAirBelow32 = avgt[idx] < 32;
+
+    let totalDailyPET = 0;
+    if (hasPlants && !isAirBelow32) {
+      // Calculate Ks, the water stress coefficient, using antecedent deficit
+      const TAW = getTawForPlant(soil_options[soilcap]);
+      const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
+      // Calculate Kc, the crop coefficient, account for if plants exist and what stage they are at
+      const Kc = getCropCoeff(hasPlants, daysSincePlanting, devSD);
+      
+      // Adjust water movement to account for calculated and provided variables
+      const petAdj = version === 'commercial' ? devSD.soilmoistureoptions.petAdj : 1;
+      totalDailyPET = -1 * pet[idx] * petAdj * Kc * Ks;
+    }
 
     // Set daily precip. If commercial version precip is 0 because high tunnels are under cover.
     let totalDailyPrecip = precip[idx];
@@ -388,6 +398,7 @@ function runNutrientModel(
       gTheta,
       drainageTotal,
       hasPlants,
+      soilTemp[idx],
       -1 * totalDailyPET,
       tin,
       som,
@@ -422,7 +433,7 @@ function runNutrientModel(
 
 export const handleRunNutrientModel = (devOptions, userOptions, weatherData) => {
   const { rootDepth, waterCapacity, plantingDate, terminationDate, applications, testResults, initialOrganicMatter, version } = userOptions;
-  const { dates, pet, precip, soilTemp } = weatherData;
+  const { dates, pet, precip, soilTemp, avgt } = weatherData;
   return {
     ...runNutrientModel(
       precip,
@@ -437,7 +448,8 @@ export const handleRunNutrientModel = (devOptions, userOptions, weatherData) => 
       testResults,
       dates,
       devOptions,
-      version
+      version,
+      avgt
     ),
     dates
   };
