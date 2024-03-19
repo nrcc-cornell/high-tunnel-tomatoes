@@ -98,8 +98,6 @@ export default function balanceNitrogen(
   const numSources = countSources([somLbs, fastN, mediumN, slowN]);
   const otherRemoved = numSources ? qnLbs / numSources : 0;
 
-  console.log(date, soilTempC, somMineralizedLbs);
-
   return {
     tin: Math.max(newTinLbs, 0),
     som: Math.max(convertLbAcreToOMPercent(somLbs - somMineralizedLbs - otherRemoved), 0),

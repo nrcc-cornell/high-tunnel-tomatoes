@@ -117,7 +117,7 @@ export const SOIL_DATA = (inches=18) => {
   }
 };
 
-function getCropCoeff(hasPlants, numdays, devSD) {
+function getCropCoeff(isGarden, hasPlants, numdays, devSD) {
   // -----------------------------------------------------------------------------------------
   // Calculate crop coefficient for a specific growth stage of plant.
   // - Coefficients for initial, middle and end growth stages are assigned directly.
@@ -145,7 +145,7 @@ function getCropCoeff(hasPlants, numdays, devSD) {
   } = devSD.soilmoistureoptions.kc;
   let Kc = null;
 
-  if (!hasPlants) {
+  if (!hasPlants && !isGarden) {
       // no plants present
       Kc = 0.15;
   } else if (numdays <= Lini.value) {
@@ -304,23 +304,24 @@ function runNutrientModel(
     const hasPlants = daysSincePlanting >=0 && daysSinceTermination < 0;
 
     const isAirBelow32 = avgt[idx] < 32;
+    const isGarden = version === 'homeowner';
 
     let totalDailyPET = 0;
-    if ((hasPlants || version === 'homeowner') && !isAirBelow32) {
+    if ((hasPlants || isGarden) && !isAirBelow32) {
       // Calculate Ks, the water stress coefficient, using antecedent deficit
       const TAW = getTawForPlant(soil_options[soilcap]);
       const Ks = getWaterStressCoeff(deficit, TAW, soil_options.p);
       // Calculate Kc, the crop coefficient, account for if plants exist and what stage they are at
-      const Kc = getCropCoeff(hasPlants, daysSincePlanting, devSD);
+      const Kc = getCropCoeff(isGarden, hasPlants, daysSincePlanting, devSD);
       
       // Adjust water movement to account for calculated and provided variables
-      const petAdj = version === 'commercial' ? devSD.soilmoistureoptions.petAdj : 1;
+      const petAdj = !isGarden ? devSD.soilmoistureoptions.petAdj : 1;
       totalDailyPET = -1 * pet[idx] * petAdj * Kc * Ks;
     }
 
     // Set daily precip. If commercial version precip is 0 because high tunnels are under cover.
     let totalDailyPrecip = precip[idx];
-    if (version === 'commercial') totalDailyPrecip = 0;
+    if (!isGarden) totalDailyPrecip = 0;
 
     let totalDailyIrrigation = 0;
     const todaysApplications = Object.values(applications).filter(obj => obj.date === date);
