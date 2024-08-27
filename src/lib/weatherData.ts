@@ -136,7 +136,8 @@ async function fetchPETData(lat, lon, todayStr, yearAdjustment=0) {
   let forecast = [];
   if (hasSeasonStarted) {
     const year = targetDate.getFullYear();
-    const response = await fetch(`https://x6xfv2cdrl.execute-api.us-east-1.amazonaws.com/production/irrigation?lat=${lat}&lon=${lon}&year=${year}`);
+    const response = await fetch(`https://csf-irrigation-api-worker.rcc-acis.workers.dev/?lat=${lat}&lon=${lon}&year=${year}`);
+    // const response = await fetch(`https://x6xfv2cdrl.execute-api.us-east-1.amazonaws.com/production/irrigation?lat=${lat}&lon=${lon}&year=${year}`);
   
     if (!response.ok) {
       throw new Error(response.statusText);
